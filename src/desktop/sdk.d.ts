@@ -58,5 +58,17 @@ declare module '@hermes/plugin-sdk' {
   export const PALETTE_AREA: string
   export const host: {
     navigate(path: string): void
+    onEvent(type: string, listener: (event: {
+      type: string
+      session_id?: string
+      profile?: string
+      payload?: unknown
+    }) => void): () => void
+    request<T>(method: string, params?: Record<string, unknown>): Promise<T>
+    state: {
+      gateway: {
+        get(): string
+      }
+    }
   }
 }

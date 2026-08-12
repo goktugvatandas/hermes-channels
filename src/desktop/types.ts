@@ -1,5 +1,49 @@
 export type ActivationPolicy = 'always' | 'mentioned' | 'observer' | 'disabled'
 
+export type MessageIntent =
+  | 'inform'
+  | 'result'
+  | 'reply_required'
+  | 'question'
+  | 'handoff'
+  | 'review_request'
+  | 'blocked'
+  | 'approval_request'
+
+export interface IntentEnvelope {
+  schemaVersion: 1
+  intent: MessageIntent
+  recipients: string[]
+  replyExpected: boolean
+  replyBudget: number
+  correlationId: string | null
+  summary: string
+}
+
+export interface DispatchClaim {
+  id: string
+  kind: 'agent' | 'classification'
+  channelId: string
+  profileId: string | null
+  context: string
+  instructions: string | null
+  input: string | null
+  cwd: string | null
+  provider: string | null
+  model: string | null
+  reasoningEffort: string | null
+  maxTokens: number
+  temperature: number
+  createdAt: number
+}
+
+export interface RpcEvent {
+  type: string
+  session_id?: string
+  profile?: string
+  payload?: unknown
+}
+
 export interface ProjectRef {
   mode: 'inherit' | 'global' | 'project'
   profile?: string | null

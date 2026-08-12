@@ -10,6 +10,7 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { CrewApi } from './api'
+import { GatewayWorker } from './gateway-worker'
 import { CrewPage } from './views/crew-page'
 
 const plugin: HermesPlugin = {
@@ -19,6 +20,8 @@ const plugin: HermesPlugin = {
   defaultEnabled: false,
   register(ctx) {
     const api = new CrewApi(ctx.rest)
+    const worker = new GatewayWorker({ rest: ctx.rest, socket: ctx.socket })
+    ctx.onDispose(worker.start())
     ctx.registerMany([
       {
         id: 'page',

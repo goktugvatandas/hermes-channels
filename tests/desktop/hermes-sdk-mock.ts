@@ -4,4 +4,15 @@ export const PALETTE_AREA = 'palette'
 
 export const host = {
   navigate: (_path: string) => undefined,
+  onEvent: (_type: string, _listener: (event: unknown) => void) =>
+    () => undefined,
+  request: async <T,>(
+    _method: string,
+    _params: Record<string, unknown> = {},
+  ): Promise<T> => ({}) as T,
+  state: {
+    gateway: {
+      get: () => 'idle',
+    },
+  },
 }
