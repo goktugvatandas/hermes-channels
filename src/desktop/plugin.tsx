@@ -10,6 +10,7 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { CrewApi } from './api'
+import { ChannelNavigationController } from './channel-navigation'
 import { GatewayWorker } from './gateway-worker'
 import { CrewPage } from './views/crew-page'
 
@@ -50,6 +51,15 @@ const plugin: HermesPlugin = {
         } satisfies PaletteContribution,
       },
     ])
+
+    const navigation = new ChannelNavigationController({
+      api,
+      register: ctx.register,
+      renderChannel: () => <CrewPage api={api} />,
+      socket: ctx.socket,
+      storage: ctx.storage,
+    })
+    ctx.onDispose(navigation.start())
   },
 }
 

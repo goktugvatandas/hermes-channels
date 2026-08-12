@@ -1,52 +1,88 @@
-import { PALETTE_AREA, ROUTES_AREA, SIDEBAR_NAV_AREA, host } from '@hermes/plugin-sdk'
+import {
+  PALETTE_AREA,
+  ROUTES_AREA,
+  SIDEBAR_NAV_AREA,
+  host,
+  type PluginContribution,
+  type PluginStorage,
+} from '@hermes/plugin-sdk'
 import { describe, expect, it, vi } from 'vitest'
 
 import plugin from '../../src/desktop/plugin'
+import type { CrewChannel } from '../../src/desktop/types'
+
+const channel: CrewChannel = {
+  id: 'general-id',
+  name: 'general',
+  purpose: '',
+  topic: '',
+  defaultResponderProfile: null,
+  defaultProject: null,
+  allowedProjects: [],
+  routingRules: {},
+  createdAt: 1,
+  updatedAt: 1,
+}
+
+function memoryStorage(): PluginStorage {
+  const values = new Map<string, unknown>()
+  return {
+    get: (key, fallback) => values.has(key) ? values.get(key) as never : fallback,
+    set: (key, value) => { values.set(key, value) },
+    remove: (key) => { values.delete(key) },
+  }
+}
 
 describe('Hermes Crew plugin registration', () => {
-  it('registers its route, sidebar row, and palette command', () => {
-    const dispose = vi.fn()
-    let contributions: Array<{
-      id: string
-      area: string
-      data: Record<string, unknown> & { run?: () => void }
-    }> = []
-    const registerMany = vi.fn((items: typeof contributions) => {
-      contributions = items
-      return dispose
+  it('starts dynamic channel navigation alongside the static Crew surface', async () => {
+    const contributions = new Map<string, PluginContribution>()
+    const register = vi.fn((item: PluginContribution) => {
+      contributions.set(item.id, item)
+      return () => { contributions.delete(item.id) }
     })
-    const onDispose = vi.fn()
-    const navigate = vi.spyOn(host, 'navigate')
-    const rest = vi.fn()
+    const cleanups: Array<() => void> = []
+    const rest = vi.fn(async (path: string) => {
+      if (path === '/channels') return [channel]
+      if (path === '/events?after=0') return []
+      throw new Error(`Unexpected REST path: ${path}`)
+    })
     const ctx = {
       rest,
-      socket: vi.fn(),
-      registerMany,
-      onDispose,
+      socket: vi.fn(() => vi.fn()),
+      register,
+      registerMany: vi.fn((items: PluginContribution[]) => {
+        const disposers = items.map(register)
+        return () => disposers.forEach((dispose) => dispose())
+      }),
+      onDispose: vi.fn((cleanup: () => void) => { cleanups.push(cleanup) }),
+      storage: memoryStorage(),
     }
+    const navigate = vi.spyOn(host, 'navigate')
 
     plugin.register(ctx as never)
+    await vi.waitFor(() => expect([...contributions.values()]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        area: SIDEBAR_NAV_AREA,
+        data: expect.objectContaining({ label: '# general' }),
+      }),
+    ])))
 
-    expect(contributions).toHaveLength(3)
-    expect(contributions[0]).toMatchObject({
-      id: 'page',
-      area: ROUTES_AREA,
-      data: { path: '/crew' },
-    })
-    expect(contributions[1]).toMatchObject({
-      id: 'nav',
-      area: SIDEBAR_NAV_AREA,
-      data: { label: 'Crew', path: '/crew' },
-    })
-    expect(contributions[2]).toMatchObject({
-      id: 'open',
-      area: PALETTE_AREA,
-      data: { id: 'hermes-crew.open', label: 'Open Hermes Crew' },
-    })
-
-    contributions[2].data.run?.()
+    expect([...contributions.values()]).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'page', area: ROUTES_AREA, data: { path: '/crew' } }),
+      expect.objectContaining({
+        id: 'nav',
+        area: SIDEBAR_NAV_AREA,
+        data: expect.objectContaining({ label: 'Crew', path: '/crew' }),
+      }),
+      expect.objectContaining({ id: 'open', area: PALETTE_AREA }),
+    ]))
+    const palette = contributions.get('open')?.data as { run?: () => void }
+    palette.run?.()
     expect(navigate).toHaveBeenCalledWith('/crew')
     expect(plugin.id).toBe('hermes-crew')
     expect(plugin.defaultEnabled).toBe(false)
+
+    cleanups.forEach((cleanup) => cleanup())
+    expect([...contributions.values()].some((item) => item.id.includes('channel-nav'))).toBe(false)
   })
 })
