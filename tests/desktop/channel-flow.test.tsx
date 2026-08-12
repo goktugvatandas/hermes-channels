@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CrewApi } from '../../src/desktop/api'
@@ -62,6 +62,16 @@ const rootMessage: CrewMessage = {
   createdAt: 2,
 }
 
+const agentMessage: CrewMessage = {
+  ...rootMessage,
+  id: 'message-agent',
+  authorType: 'agent',
+  authorProfileId: 'atlas',
+  content: 'The agent reply is now visible.',
+  mentions: [],
+  createdAt: 3,
+}
+
 afterEach(cleanup)
 
 function apiFixture() {
@@ -89,6 +99,29 @@ function apiFixture() {
 }
 
 describe('channel flow', () => {
+  it('shows an agent message after its completed turn reaches the event journal', async () => {
+    const { api } = apiFixture()
+    let resolveEvents!: (events: Awaited<ReturnType<CrewApi['events']>>) => void
+    vi.mocked(api.listMessages)
+      .mockResolvedValueOnce([rootMessage])
+      .mockResolvedValue([rootMessage, agentMessage])
+    vi.mocked(api.events).mockImplementation(() => new Promise((resolve) => {
+      resolveEvents = resolve
+    }))
+
+    render(<CrewPage api={api} />)
+    await screen.findByText(rootMessage.content)
+    await act(async () => resolveEvents([{
+      sequence: 9,
+      type: 'completed',
+      channelId: channel.id,
+      turnId: 'turn-1',
+      payload: { messageId: agentMessage.id },
+    }]))
+
+    expect(await screen.findByText('The agent reply is now visible.')).not.toBeNull()
+  })
+
   it('creates a channel with a default responder and all profiles as members', async () => {
     const { api, createChannel } = apiFixture()
     render(<CrewPage api={api} />)

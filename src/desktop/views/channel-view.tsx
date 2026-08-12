@@ -9,17 +9,18 @@ interface ChannelViewProps {
   api: CrewApi
   channel: CrewChannel
   profiles: HermesProfile[]
+  messageRevision: number
   onOpenThread(message: CrewMessage): void
 }
 
-export function ChannelView({ api, channel, profiles, onOpenThread }: ChannelViewProps) {
+export function ChannelView({ api, channel, profiles, messageRevision, onOpenThread }: ChannelViewProps) {
   const [messages, setMessages] = useState<CrewMessage[]>([])
   useEffect(() => {
     let current = true
     setMessages([])
     void api.listMessages(channel.id).then((items) => { if (current) setMessages(items) })
     return () => { current = false }
-  }, [api, channel.id])
+  }, [api, channel.id, messageRevision])
 
   return (
     <section aria-label={`#${channel.name}`} className="flex min-h-0 flex-col">

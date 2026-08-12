@@ -56,6 +56,11 @@ export function CrewPage({ api }: CrewPageProps) {
   }, [api])
 
   const selected = channels.find((channel) => channel.id === selectedId) || null
+  const messageRevision = events.reduce((latest, event) => (
+    event.channelId === selectedId && event.type === 'completed'
+      ? Math.max(latest, event.sequence)
+      : latest
+  ), 0)
 
   async function createChannel(body: Record<string, unknown>) {
     const created = await api.createChannel(body)
@@ -76,7 +81,7 @@ export function CrewPage({ api }: CrewPageProps) {
       {view === 'studio' ? <StudioView api={api} /> : view === 'search' ? <SearchView api={api} channels={channels} profiles={profiles} /> :
       <section className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_280px]">
         <div className="min-h-0 border-r border-(--ui-stroke-secondary)"><ChannelList channels={channels} onCreate={createChannel} onSelect={(id) => { setSelectedId(id); setThreadRoot(null) }} profiles={profiles} selectedId={selectedId} /></div>
-        {selected ? <ChannelView api={api} channel={selected} onOpenThread={setThreadRoot} profiles={profiles} /> : profiles.length ? <FirstRun api={api} onComplete={(channel) => { setChannels([channel]); setSelectedId(channel.id) }} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>}
+        {selected ? <ChannelView api={api} channel={selected} messageRevision={messageRevision} onOpenThread={setThreadRoot} profiles={profiles} /> : profiles.length ? <FirstRun api={api} onComplete={(channel) => { setChannels([channel]); setSelectedId(channel.id) }} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>}
         {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <aside className="min-h-0 overflow-auto border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /><ActivityPanel api={api} events={events.filter((event) => !selected || event.channelId === selected.id)} /></aside>}
       </section>}
     </main>

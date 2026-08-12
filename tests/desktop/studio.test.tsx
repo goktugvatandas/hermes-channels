@@ -56,6 +56,13 @@ function fixture() {
 }
 
 describe('Crew Studio', () => {
+  it('renders the native model catalog inside its required Hermes menu context', async () => {
+    const { api } = fixture()
+    render(<StudioView api={api} />)
+
+    expect(await screen.findByLabelText('Hermes model catalog')).not.toBeNull()
+  })
+
   it('creates a minimal Hermes profile without mixing clone options', async () => {
     const { api, createProfile } = fixture()
     render(<StudioView api={api} />)
