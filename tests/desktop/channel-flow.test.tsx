@@ -84,6 +84,15 @@ function apiFixture() {
     api: {
       listChannels: vi.fn(async () => [channel]),
       listProfiles: vi.fn(async () => profiles),
+      getMember: vi.fn(async (name: string) => ({
+        profileId: name,
+        displayName: name,
+        role: '',
+        avatar: null,
+        color: null,
+        defaultProject: null,
+        archived: false,
+      })),
       listMessages: vi.fn(async () => [rootMessage]),
       listProjects: vi.fn(async () => [
         { id: 'p-web', name: 'Web', primaryPath: '/work/web', archived: false },
@@ -99,6 +108,94 @@ function apiFixture() {
 }
 
 describe('channel flow', () => {
+  it('selects a dedicated route channel and reports it visible', async () => {
+    const { api } = apiFixture()
+    const onChannelViewed = vi.fn()
+    vi.mocked(api.listChannels).mockResolvedValue([
+      channel,
+      { ...channel, id: 'research', name: 'research' },
+    ])
+
+    render(
+      <CrewPage api={api} initialChannelId="research" onChannelViewed={onChannelViewed} />,
+    )
+
+    expect(await screen.findByRole('region', { name: '#research' })).not.toBeNull()
+    await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith('research'))
+  })
+
+  it('clears channel visibility in Studio and returns native navigation to Crew root', async () => {
+    const { api } = apiFixture()
+    const onChannelViewed = vi.fn()
+    const onNavigateChannel = vi.fn()
+    render(
+      <CrewPage
+        api={api}
+        initialChannelId={channel.id}
+        onChannelViewed={onChannelViewed}
+        onNavigateChannel={onNavigateChannel}
+      />,
+    )
+    await screen.findByText(rootMessage.content)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Studio' }))
+
+    await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith(null))
+    expect(onNavigateChannel).toHaveBeenCalledWith(null)
+  })
+
+  it('navigates through native routes when a channel is selected', async () => {
+    const { api } = apiFixture()
+    const onNavigateChannel = vi.fn()
+    vi.mocked(api.listChannels).mockResolvedValue([
+      channel,
+      { ...channel, id: 'research', name: 'research' },
+    ])
+    render(<CrewPage api={api} onNavigateChannel={onNavigateChannel} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '#research' }))
+
+    expect(onNavigateChannel).toHaveBeenLastCalledWith('research')
+  })
+
+  it('publishes a created channel and navigates to its dedicated route', async () => {
+    const { api } = apiFixture()
+    const onChannelCreated = vi.fn()
+    const onNavigateChannel = vi.fn()
+    render(
+      <CrewPage
+        api={api}
+        onChannelCreated={onChannelCreated}
+        onNavigateChannel={onNavigateChannel}
+      />,
+    )
+    await screen.findByRole('button', { name: '#general' })
+    fireEvent.click(screen.getByRole('button', { name: 'New channel' }))
+    fireEvent.change(screen.getByLabelText('Channel name'), { target: { value: 'builds' } })
+    fireEvent.change(screen.getByLabelText('Default responder'), { target: { value: 'atlas' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create channel' }))
+
+    const created = { ...channel, id: 'channel-2', name: 'builds' }
+    await waitFor(() => expect(onChannelCreated).toHaveBeenCalledWith(created))
+    expect(onNavigateChannel).toHaveBeenLastCalledWith(created.id)
+  })
+
+  it('falls back to Crew root when a dedicated route channel is missing', async () => {
+    const { api } = apiFixture()
+    const onNavigateChannel = vi.fn()
+
+    render(
+      <CrewPage
+        api={api}
+        initialChannelId="deleted-channel"
+        onNavigateChannel={onNavigateChannel}
+      />,
+    )
+
+    expect(await screen.findByRole('region', { name: '#general' })).not.toBeNull()
+    expect(onNavigateChannel).toHaveBeenCalledWith(null)
+  })
+
   it('shows an agent message after its completed turn reaches the event journal', async () => {
     const { api } = apiFixture()
     let resolveEvents!: (events: Awaited<ReturnType<CrewApi['events']>>) => void

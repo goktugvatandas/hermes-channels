@@ -10,7 +10,7 @@ import {
 } from '@hermes/plugin-sdk'
 
 import { CrewApi } from './api'
-import { ChannelNavigationController } from './channel-navigation'
+import { ChannelNavigationController, channelPath } from './channel-navigation'
 import { GatewayWorker } from './gateway-worker'
 import { CrewPage } from './views/crew-page'
 
@@ -21,6 +21,18 @@ const plugin: HermesPlugin = {
   defaultEnabled: false,
   register(ctx) {
     const api = new CrewApi(ctx.rest)
+    let navigation!: ChannelNavigationController
+    const renderCrewPage = (initialChannelId?: string) => (
+      <CrewPage
+        api={api}
+        initialChannelId={initialChannelId}
+        onChannelCreated={(channel) => navigation.upsertChannel(channel)}
+        onChannelViewed={(channelId) => navigation.setViewedChannel(channelId)}
+        onNavigateChannel={(channelId) => host.navigate(
+          channelId ? channelPath(channelId) : '/crew',
+        )}
+      />
+    )
     const worker = new GatewayWorker({ rest: ctx.rest, socket: ctx.socket })
     ctx.onDispose(worker.start())
     ctx.registerMany([
@@ -28,7 +40,7 @@ const plugin: HermesPlugin = {
         id: 'page',
         area: ROUTES_AREA,
         data: { path: '/crew' } satisfies RouteContribution,
-        render: () => <CrewPage api={api} />,
+        render: () => renderCrewPage(),
       },
       {
         id: 'nav',
@@ -52,10 +64,10 @@ const plugin: HermesPlugin = {
       },
     ])
 
-    const navigation = new ChannelNavigationController({
+    navigation = new ChannelNavigationController({
       api,
       register: ctx.register,
-      renderChannel: () => <CrewPage api={api} />,
+      renderChannel: (channelId) => renderCrewPage(channelId),
       socket: ctx.socket,
       storage: ctx.storage,
     })
