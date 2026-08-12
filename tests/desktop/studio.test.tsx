@@ -64,7 +64,7 @@ describe('Crew Studio', () => {
     const dialog = screen.getByRole('dialog', { name: 'Create Hermes profile' })
     fireEvent.change(within(dialog).getByLabelText('Profile name'), { target: { value: 'critic' } })
     fireEvent.click(within(dialog).getByLabelText('Start without skills'))
-    expect((within(dialog).getByLabelText('Clone from') as HTMLSelectElement).disabled).toBe(true)
+    expect((within(dialog).getByLabelText('Copy skills from profile') as HTMLSelectElement).disabled).toBe(true)
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create' }))
     await waitFor(() => expect(createProfile).toHaveBeenCalledWith({ name: 'critic', noSkills: true, cloneFrom: null, cloneConfig: false, cloneAll: false, description: '' }))
     expect(await screen.findByRole('button', { name: 'critic' })).not.toBeNull()

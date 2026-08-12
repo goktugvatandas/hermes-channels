@@ -4,11 +4,12 @@ import { extname, resolve } from 'node:path'
 const root = resolve(new URL('..', import.meta.url).pathname)
 const dist = resolve(root, 'dist')
 const plugin = await readFile(resolve(dist, 'desktop-plugins/hermes-crew/plugin.js'), 'utf8')
-const imports = [
-  ...[...plugin.matchAll(/^\s*(?:\}\s*)?from\s+["']([^"']+)["'];?$/gm)].map((match) => match[1]),
-  ...[...plugin.matchAll(/^\s*import\s+["']([^"']+)["'];?$/gm)].map((match) => match[1]),
-]
-const allowed = new Set(['@hermes/plugin-sdk', 'react', 'react/jsx-runtime'])
+// Match Hermes Desktop 0.20.0's runtime-loader scanner exactly. Its deliberately
+// simple pattern also scans generated string literals, so this protects the
+// shipped artifact from false-positive imports as well as real unsupported ones.
+const importSpecifierRe = () => /(from\s*|import\s*\(\s*|import\s+)(['"])([^'"]+)\2/g
+const imports = [...plugin.matchAll(importSpecifierRe())].map((match) => match[3])
+const allowed = new Set(['@hermes/plugin-sdk', 'react', 'react/jsx-runtime', 'react/jsx-dev-runtime'])
 const unexpected = imports.filter((specifier) => !allowed.has(specifier))
 if (unexpected.length) throw new Error(`Unexpected runtime imports: ${unexpected.join(', ')}`)
 if (/sourceMappingURL|\/home\/|[A-Z]:\\Users\\/.test(plugin)) throw new Error('Bundle contains source-map or absolute-path material')

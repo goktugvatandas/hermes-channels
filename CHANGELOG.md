@@ -8,17 +8,18 @@ Initial Hermes Crew release for one local user:
 - Project-aware channels, message-scoped projects, inherited thread context, mentions, default responders, and per-channel activation policies.
 - Structured hidden intent envelopes, deterministic reply routing, bounded handoffs, optional classifier configuration disabled by default, and durable activity/approval controls.
 - SQLite persistence, restart recovery, full-text search, first-run onboarding, Crew Studio, installer, and reproducible release packaging.
+- Hermes Desktop 0.20.0 runtime-loader compatibility verification for generated plugin imports.
 
 ### Acceptance evidence
 
-- Automated release gate: 59 Python tests and 27 TypeScript/UI tests passed with no skipped acceptance scenarios.
+- Automated release gate: 60 Python tests and 27 TypeScript/UI tests passed with no skipped acceptance scenarios.
 - Hermes Agent: `0.20.0` (`2026.8.3`).
 - Hermes Desktop package: `0.17.0`.
 - Pinned Desktop SDK contract commit: `ee472a7fdbbc55924f91ab122dbaa29bd07668b0`.
 - Host: Linux `7.1.4-arch1-1`, x86_64.
 - Crew database schema: `2`.
-- Desktop plugin SHA-256: `030cbd31f03f2868ce2c9e8f60dfc41345aeb6ac8c34715f0d21dcf2022f00cc`.
-- Release archive SHA-256: `f357ea72c93ae550d4db3088eb2be0ddb565b1833138416206509e8941db491e`.
+- Desktop plugin SHA-256: `28d3ac93c8f6236cfa62eb34dab0a605e15d7a99ba8b7fddff32750dc7bbcb4f`.
+- Release archive SHA-256: `af3830ecad9458262af9ceedcef2711ec6b7075fa31194ac46e456920ab025ab`.
 
 A disposable real `HERMES_HOME` smoke test installed and enabled the packaged user plugin in Hermes 0.20.0, loaded its FastAPI routes, and created two `--no-skills` profiles: Atlas on OpenAI/GPT-5.6 and Scout on Google/Gemini 2.5 Pro. The real Crew API returned both profile configurations, routed a global message to mentioned Scout plus default Atlas, resolved a registered Hermes project into the Atlas claim's `cwd`, cancelled only Scout, preserved the Crew database across reinstall, and marked the remaining Atlas claims interrupted after backend restart.
 
