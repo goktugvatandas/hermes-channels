@@ -90,6 +90,38 @@ export interface HermesProfile {
   description: string
 }
 
+export interface CrewMember {
+  profileId: string
+  displayName: string
+  role: string
+  avatar: string | null
+  color: string | null
+  modelLabel?: string | null
+  defaultProject: ProjectRef | null
+  archived: boolean
+  updatedAt?: number
+}
+
+export interface ChannelMember {
+  channelId: string
+  profileId: string
+  activationPolicy: ActivationPolicy
+}
+
+export interface ClassifierConfig {
+  enabled: boolean
+  provider: string | null
+  model: string | null
+  reasoningEffort: string | null
+  maxTokens: number
+  confidenceThreshold: number
+}
+
+export interface SkillState {
+  name: string
+  enabled: boolean
+}
+
 export interface EventFrame {
   sequence: number
   type: string

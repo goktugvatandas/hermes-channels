@@ -7,6 +7,7 @@ import { MemberRoster } from '../components/member-roster'
 import type { CrewChannel, CrewMessage, EventFrame, HermesProfile } from '../types'
 import { ChannelView } from './channel-view'
 import { ThreadView } from './thread-view'
+import { StudioView } from './studio-view'
 
 export interface CrewPageProps {
   api: CrewApi
@@ -20,6 +21,7 @@ export function CrewPage({ api }: CrewPageProps) {
   const [events, setEvents] = useState<EventFrame[]>([])
   const eventCursor = useRef(0)
   const [error, setError] = useState('')
+  const [view, setView] = useState<'channels' | 'studio'>('channels')
 
   useEffect(() => {
     let current = true
@@ -62,18 +64,19 @@ export function CrewPage({ api }: CrewPageProps) {
 
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <header className="border-b border-(--ui-stroke-secondary) px-5 py-4">
-        <h1 className="text-base font-semibold">Hermes Crew</h1>
+      <header className="flex items-start justify-between border-b border-(--ui-stroke-secondary) px-5 py-4">
+        <div><h1 className="text-base font-semibold">Hermes Crew</h1>
         <p className="mt-1 text-sm text-(--ui-text-secondary)">
           Persistent Hermes profiles working together in local channels.
-        </p>
+        </p></div><div className="flex gap-2 text-sm"><button aria-pressed={view === 'channels'} onClick={() => setView('channels')} type="button">Channels</button><button aria-pressed={view === 'studio'} onClick={() => setView('studio')} type="button">Studio</button></div>
       </header>
       {error ? <p role="alert" className="p-4 text-sm text-red-500">{error}</p> : null}
+      {view === 'studio' ? <StudioView api={api} /> :
       <section className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_280px]">
         <div className="min-h-0 border-r border-(--ui-stroke-secondary)"><ChannelList channels={channels} onCreate={createChannel} onSelect={(id) => { setSelectedId(id); setThreadRoot(null) }} profiles={profiles} selectedId={selectedId} /></div>
         {selected ? <ChannelView api={api} channel={selected} onOpenThread={setThreadRoot} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a channel to assemble your crew.</div>}
         {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <aside className="min-h-0 overflow-auto border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /><ActivityPanel api={api} events={events.filter((event) => !selected || event.channelId === selected.id)} /></aside>}
-      </section>
+      </section>}
     </main>
   )
 }

@@ -52,6 +52,19 @@ class ChannelMemberRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class MemberPresentationRecord:
+    profile_id: str
+    display_name: str
+    role: str
+    avatar: str | None
+    color: str | None
+    model_label: str | None
+    default_project: ProjectRef | None
+    archived: bool
+    updated_at: int
+
+
+@dataclass(frozen=True, slots=True)
 class MessageRecord:
     id: str
     channel_id: str
@@ -237,6 +250,63 @@ class CrewRepository:
             ).fetchall()
         return [ChannelMemberRecord(**dict(row)) for row in rows]
 
+    def get_member_presentation(self, profile_id: str) -> MemberPresentationRecord:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM member_presentation WHERE profile_id = ?",
+                (profile_id,),
+            ).fetchone()
+        if row is None:
+            now = _now_ms()
+            with self.database.connect() as connection:
+                connection.execute(
+                    """INSERT INTO member_presentation
+                       (profile_id, display_name, role, archived, updated_at)
+                       VALUES (?, ?, '', 0, ?)""",
+                    (profile_id, profile_id, now),
+                )
+            return self.get_member_presentation(profile_id)
+        return self._presentation_from_row(row)
+
+    def update_member_presentation(
+        self, profile_id: str, **changes: Any
+    ) -> MemberPresentationRecord:
+        allowed = {
+            "display_name": "display_name",
+            "role": "role",
+            "avatar": "avatar",
+            "color": "color",
+            "model_label": "model_label",
+            "default_project": "default_project_json",
+            "archived": "archived",
+        }
+        unknown = set(changes) - set(allowed)
+        if unknown:
+            raise ValueError(f"unsupported member fields: {sorted(unknown)}")
+        self.get_member_presentation(profile_id)
+        if not changes:
+            return self.get_member_presentation(profile_id)
+        assignments: list[str] = []
+        values: list[Any] = []
+        for field, value in changes.items():
+            assignments.append(f"{allowed[field]} = ?")
+            if field == "default_project":
+                values.append(_dump_project(value))
+            elif field == "archived":
+                values.append(int(value))
+            elif isinstance(value, str):
+                values.append(value.strip())
+            else:
+                values.append(value)
+        assignments.append("updated_at = ?")
+        values.extend((_now_ms(), profile_id))
+        with self.database.connect() as connection:
+            connection.execute(
+                f"UPDATE member_presentation SET {', '.join(assignments)} WHERE profile_id = ?",
+                values,
+            )
+        return self.get_member_presentation(profile_id)
+
     def member_default_project(self, profile_id: str) -> ProjectRef | None:
         with self.database.connect() as connection:
             row = connection.execute(
@@ -244,6 +314,20 @@ class CrewRepository:
                 (profile_id,),
             ).fetchone()
         return _load_project(row[0]) if row is not None else None
+
+    @staticmethod
+    def _presentation_from_row(row: Any) -> MemberPresentationRecord:
+        return MemberPresentationRecord(
+            profile_id=row["profile_id"],
+            display_name=row["display_name"],
+            role=row["role"],
+            avatar=row["avatar"],
+            color=row["color"],
+            model_label=row["model_label"],
+            default_project=_load_project(row["default_project_json"]),
+            archived=bool(row["archived"]),
+            updated_at=row["updated_at"],
+        )
 
     def append_message(
         self,

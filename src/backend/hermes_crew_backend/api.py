@@ -19,7 +19,13 @@ from .db import CrewDatabase
 from .event_bus import EventBus, EventFrame
 from .hermes_adapter import HermesAdapter
 from .models import ActivationPolicy, IntentEnvelope, ProjectRef
-from .repositories import ChannelRecord, CrewRepository, MessageRecord
+from .repositories import (
+    ChannelMemberRecord,
+    ChannelRecord,
+    CrewRepository,
+    MemberPresentationRecord,
+    MessageRecord,
+)
 from .routing import Router
 from .scheduler import ApprovalRecord, Scheduler, TurnRecord
 
@@ -59,6 +65,29 @@ class ChannelPatch(ApiModel):
     default_project: ProjectRef | None = None
     allowed_projects: list[str] | None = None
     routing_rules: dict[str, Any] | None = None
+
+
+class ChannelMemberInput(ApiModel):
+    activation_policy: ActivationPolicy
+
+
+class MemberPatch(ApiModel):
+    display_name: str | None = None
+    role: str | None = None
+    avatar: str | None = None
+    color: str | None = None
+    model_label: str | None = None
+    default_project: ProjectRef | None = None
+    archived: bool | None = None
+
+
+class ClassifierInput(ApiModel):
+    enabled: bool = False
+    provider: str | None = None
+    model: str | None = None
+    reasoning_effort: str | None = None
+    max_tokens: int = Field(default=300, ge=1, le=4096)
+    confidence_threshold: float = Field(default=0.65, ge=0, le=1)
 
 
 class MessageCreate(ApiModel):
@@ -229,6 +258,30 @@ def _message(record: MessageRecord) -> dict[str, Any]:
     }
 
 
+def _member(record: MemberPresentationRecord) -> dict[str, Any]:
+    return {
+        "profileId": record.profile_id,
+        "displayName": record.display_name,
+        "role": record.role,
+        "avatar": record.avatar,
+        "color": record.color,
+        "modelLabel": record.model_label,
+        "defaultProject": record.default_project.model_dump(by_alias=True)
+        if record.default_project
+        else None,
+        "archived": record.archived,
+        "updatedAt": record.updated_at,
+    }
+
+
+def _channel_member(record: ChannelMemberRecord) -> dict[str, Any]:
+    return {
+        "channelId": record.channel_id,
+        "profileId": record.profile_id,
+        "activationPolicy": record.activation_policy,
+    }
+
+
 def _turn(record: TurnRecord) -> dict[str, Any]:
     raw = asdict(record)
     return {_camel(key): value for key, value in raw.items()}
@@ -310,6 +363,82 @@ def create_router(
             if value is not None or field in clearable
         }
         return _channel(service.repository.update_channel(channel_id, **changes))
+
+    @api.get("/channels/{channel_id}/members")
+    async def list_channel_members(channel_id: str) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.repository is not None
+        service.repository.require_channel(channel_id)
+        return [_channel_member(item) for item in service.repository.list_members(channel_id)]
+
+    @api.put("/channels/{channel_id}/members/{profile_id}")
+    async def put_channel_member(
+        channel_id: str, profile_id: str, body: ChannelMemberInput
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        return _channel_member(
+            service.repository.add_member(
+                channel_id, profile_id, activation_policy=body.activation_policy
+            )
+        )
+
+    @api.get("/members/{profile_id}")
+    async def get_member(profile_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        return _member(service.repository.get_member_presentation(profile_id))
+
+    @api.patch("/members/{profile_id}")
+    async def patch_member(profile_id: str, body: MemberPatch) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        changes = body.model_dump(exclude_unset=True)
+        return _member(
+            service.repository.update_member_presentation(profile_id, **changes)
+        )
+
+    @api.get("/channels/{channel_id}/classifier")
+    async def get_classifier(channel_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        service.repository.require_channel(channel_id)
+        with service.repository.database.connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM classifier_configs WHERE channel_id = ?", (channel_id,)
+            ).fetchone()
+        if row is None:
+            return {
+                "enabled": False,
+                "provider": None,
+                "model": None,
+                "reasoningEffort": None,
+                "maxTokens": 300,
+                "confidenceThreshold": 0.65,
+            }
+        return {
+            "enabled": bool(row["enabled"]),
+            "provider": row["provider"],
+            "model": row["model"],
+            "reasoningEffort": row["reasoning_effort"],
+            "maxTokens": row["max_tokens"],
+            "confidenceThreshold": row["confidence_threshold"],
+        }
+
+    @api.put("/channels/{channel_id}/classifier")
+    async def put_classifier(channel_id: str, body: ClassifierInput) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        Classifier(service.repository).configure(
+            channel_id,
+            enabled=body.enabled,
+            provider=body.provider,
+            model=body.model,
+            reasoning_effort=body.reasoning_effort,
+            max_tokens=body.max_tokens,
+            confidence_threshold=body.confidence_threshold,
+        )
+        return await get_classifier(channel_id)
 
     @api.get("/channels/{channel_id}/messages")
     async def list_messages(channel_id: str) -> list[dict[str, Any]]:

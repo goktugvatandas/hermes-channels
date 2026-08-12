@@ -96,6 +96,51 @@ async def test_health_channel_message_idempotency_and_thread_routes(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_studio_member_behavior_and_classifier_routes(tmp_path):
+    """Crew Studio fields stay local while profile-owned fields remain in Hermes."""
+    async with _client(_app(tmp_path)) as client:
+        channel = await _create_channel(client)
+
+        member = await client.patch(
+            f"{PREFIX}/members/atlas",
+            json={"displayName": "Atlas", "role": "Engineer", "color": "blue"},
+        )
+        assert member.status_code == 200
+        assert member.json()["role"] == "Engineer"
+
+        activation = await client.put(
+            f"{PREFIX}/channels/{channel['id']}/members/atlas",
+            json={"activationPolicy": "always"},
+        )
+        assert activation.status_code == 200
+        assert activation.json()["activationPolicy"] == "always"
+        assert (await client.get(f"{PREFIX}/channels/{channel['id']}/members")).json() == [
+            {
+                "channelId": channel["id"],
+                "profileId": "atlas",
+                "activationPolicy": "always",
+            }
+        ]
+
+        default_classifier = (
+            await client.get(f"{PREFIX}/channels/{channel['id']}/classifier")
+        ).json()
+        assert default_classifier["enabled"] is False
+        configured = await client.put(
+            f"{PREFIX}/channels/{channel['id']}/classifier",
+            json={
+                "enabled": True,
+                "provider": "openai",
+                "model": "gpt-5-mini",
+                "reasoningEffort": "low",
+                "maxTokens": 250,
+                "confidenceThreshold": 0.7,
+            },
+        )
+        assert configured.json()["model"] == "gpt-5-mini"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_approval_completion_cancel_retry_and_activity_cursor(tmp_path):
     """Desktop worker control routes must operate on one durable turn at a time."""
     async with _client(_app(tmp_path)) as client:

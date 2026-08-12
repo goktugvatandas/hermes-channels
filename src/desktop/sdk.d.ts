@@ -1,6 +1,28 @@
 declare module '@hermes/plugin-sdk' {
   import type { ReactNode } from 'react'
 
+  export interface ModelChoice {
+    effort: string
+    fast: boolean
+    model: string
+    provider: string
+  }
+
+  export interface ModelMenuController {
+    applyPreset(preset: { effort?: string; fast?: boolean }, row: { model: string; provider: string }): void
+    current: ModelChoice
+    presetFor(provider: string, model: string): { effort?: string; fast?: boolean }
+    select(model: string, provider: string): Promise<boolean | void> | void
+    setOptions(patch: { effort?: string; fast?: boolean }, row: { isActive: boolean; model: string; provider: string }): void
+  }
+
+  export interface RuntimeReadinessResult {
+    checksDisagree: boolean
+    ready: boolean
+    reason: string | null
+    source: 'fallback' | 'runtime_check' | 'setup_status'
+  }
+
   export interface PluginRestOptions {
     method?: string
     body?: unknown
@@ -56,6 +78,11 @@ declare module '@hermes/plugin-sdk' {
   export const ROUTES_AREA: string
   export const SIDEBAR_NAV_AREA: string
   export const PALETTE_AREA: string
+  export function ModelCatalogMenu(props: { controller: ModelMenuController; profile?: string }): ReactNode
+  export function evaluateRuntimeReadiness(
+    request: <T>(method: string, params?: Record<string, unknown>) => Promise<T>,
+    options?: { requestedProvider?: string },
+  ): Promise<RuntimeReadinessResult>
   export const host: {
     navigate(path: string): void
     onEvent(type: string, listener: (event: {
