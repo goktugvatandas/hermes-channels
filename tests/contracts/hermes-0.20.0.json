@@ -1,0 +1,30 @@
+{
+  "hermesAgent": "0.20.0",
+  "desktopPackage": "0.17.0",
+  "upstreamCommit": "ee472a7fdbbc55924f91ab122dbaa29bd07668b0",
+  "rpcs": [
+    "approval.respond",
+    "llm.oneshot",
+    "model.options",
+    "projects.list",
+    "prompt.submit",
+    "session.create",
+    "session.interrupt",
+    "session.resume"
+  ],
+  "events": [
+    "approval.request",
+    "clarify.request",
+    "error",
+    "message.complete",
+    "message.delta",
+    "message.start",
+    "reasoning.delta",
+    "session.info",
+    "status.update",
+    "thinking.delta",
+    "tool.complete",
+    "tool.progress",
+    "tool.start"
+  ]
+}
