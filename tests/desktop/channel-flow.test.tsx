@@ -108,7 +108,7 @@ function apiFixture() {
 }
 
 describe('channel flow', () => {
-  it('selects a dedicated route channel and reports it visible', async () => {
+  it('renders a dedicated route as a standalone channel and reports it visible', async () => {
     const { api } = apiFixture()
     const onChannelViewed = vi.fn()
     vi.mocked(api.listChannels).mockResolvedValue([
@@ -121,24 +121,26 @@ describe('channel flow', () => {
     )
 
     expect(await screen.findByRole('region', { name: '#research' })).not.toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Hermes Crew' })).toBeNull()
+    expect(screen.queryByRole('navigation', { name: 'Crew channels' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Studio' })).toBeNull()
     await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith('research'))
   })
 
-  it('clears channel visibility in Studio and returns native navigation to Crew root', async () => {
+  it('clears channel visibility in Search and returns native navigation to Crew root', async () => {
     const { api } = apiFixture()
     const onChannelViewed = vi.fn()
     const onNavigateChannel = vi.fn()
     render(
       <CrewPage
         api={api}
-        initialChannelId={channel.id}
         onChannelViewed={onChannelViewed}
         onNavigateChannel={onNavigateChannel}
       />,
     )
     await screen.findByText(rootMessage.content)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Studio' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 
     await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith(null))
     expect(onNavigateChannel).toHaveBeenCalledWith(null)

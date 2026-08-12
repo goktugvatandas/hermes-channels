@@ -104,6 +104,18 @@ export function CrewPage({
     onNavigateChannel?.(null)
   }
 
+  if (initialChannelId !== undefined) {
+    return (
+      <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
+        {error ? <p role="alert" className="p-4 text-sm text-red-500">{error}</p> : null}
+        <section className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_280px]">
+          {selected ? <ChannelView api={api} channel={selected} messageRevision={messageRevision} onOpenThread={setThreadRoot} profiles={profiles} /> : null}
+          {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <aside className="min-h-0 overflow-auto border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /><ActivityPanel api={api} events={events.filter((event) => !selected || event.channelId === selected.id)} /></aside>}
+        </section>
+      </main>
+    )
+  }
+
   return (
     <main className="flex h-full min-h-0 flex-col bg-background text-foreground">
       <header className="flex items-start justify-between border-b border-(--ui-stroke-secondary) px-5 py-4">
