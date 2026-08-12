@@ -12,7 +12,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:py": "pytest -q",
-    "verify:dist": "node scripts/verify-dist.mjs"
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "package": "node scripts/package.mjs"
   },
   "peerDependencies": {
     "react": "19.2.7"

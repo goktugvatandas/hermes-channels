@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CrewApi } from '../api'
 import { ChannelList } from '../components/channel-list'
 import { ActivityPanel } from '../components/activity-panel'
+import { FirstRun } from '../components/first-run'
 import { MemberRoster } from '../components/member-roster'
 import type { CrewChannel, CrewMessage, EventFrame, HermesProfile } from '../types'
 import { ChannelView } from './channel-view'
@@ -74,7 +75,7 @@ export function CrewPage({ api }: CrewPageProps) {
       {view === 'studio' ? <StudioView api={api} /> :
       <section className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_280px]">
         <div className="min-h-0 border-r border-(--ui-stroke-secondary)"><ChannelList channels={channels} onCreate={createChannel} onSelect={(id) => { setSelectedId(id); setThreadRoot(null) }} profiles={profiles} selectedId={selectedId} /></div>
-        {selected ? <ChannelView api={api} channel={selected} onOpenThread={setThreadRoot} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a channel to assemble your crew.</div>}
+        {selected ? <ChannelView api={api} channel={selected} onOpenThread={setThreadRoot} profiles={profiles} /> : profiles.length ? <FirstRun api={api} onComplete={(channel) => { setChannels([channel]); setSelectedId(channel.id) }} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>}
         {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <aside className="min-h-0 overflow-auto border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /><ActivityPanel api={api} events={events.filter((event) => !selected || event.channelId === selected.id)} /></aside>}
       </section>}
     </main>

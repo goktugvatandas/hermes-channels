@@ -1,4 +1,4 @@
-import { mkdir, rm } from 'node:fs/promises'
+import { cp, mkdir, rm } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -22,3 +22,13 @@ await build({
   legalComments: 'none',
   sourcemap: false,
 })
+
+await cp(resolve(root, 'plugin'), resolve(root, 'dist/plugins/hermes-crew'), { recursive: true })
+await cp(
+  resolve(root, 'src/backend/hermes_crew_backend'),
+  resolve(root, 'dist/plugins/hermes-crew/dashboard/hermes_crew_backend'),
+  {
+    recursive: true,
+    filter: (path) => !path.includes('__pycache__') && !path.endsWith('.pyc'),
+  },
+)
