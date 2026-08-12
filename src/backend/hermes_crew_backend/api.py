@@ -123,6 +123,10 @@ class ClassificationInput(ApiModel):
     raw_result: str
 
 
+class DispatchFailureInput(ApiModel):
+    error: str = Field(min_length=1, max_length=500)
+
+
 class ApprovalInput(ApiModel):
     decision: Literal["approve", "reject"]
     note: str = ""
@@ -217,6 +221,7 @@ class BackendServices:
             self.repository = CrewRepository(self.database)
             self.bus = EventBus()
             self.scheduler = Scheduler(self.repository, event_bus=self.bus)
+            self.scheduler.reconcile_startup(set())
         if self.adapter is None:
             self.adapter = HermesAdapter()
         return self
@@ -625,6 +630,14 @@ def create_router(
         assert service.scheduler is not None
         turns = service.scheduler.complete_classification(turn_id, body.raw_result)
         return {"turnIds": [turn.id for turn in turns]}
+
+    @api.post("/dispatch/{turn_id}/fail")
+    async def fail_dispatch(
+        turn_id: str, body: DispatchFailureInput
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.scheduler is not None
+        return _turn(service.scheduler.fail(turn_id, body.error))
 
     @api.post("/turns/{turn_id}/cancel")
     async def cancel_turn(turn_id: str) -> dict[str, Any]:

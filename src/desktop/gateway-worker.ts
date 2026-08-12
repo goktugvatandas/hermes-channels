@@ -67,6 +67,11 @@ function sessionCreateParams(claim: DispatchClaim): Record<string, unknown> {
   }
 }
 
+function dispatchError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  return (message.trim() || 'Hermes dispatch failed').slice(0, 500)
+}
+
 function eventFrame(value: unknown): EventFrame | null {
   if (!value || typeof value !== 'object') return null
   const frame = value as Partial<EventFrame>
@@ -155,42 +160,52 @@ export class GatewayWorker {
       body: { workerId: this.workerId },
     })
     if (!claim) return false
-
-    const created = (await this.request(
-      'session.create',
-      sessionCreateParams(claim),
-    )) as SessionCreateResult
-    await this.rest(`/dispatch/${encodeURIComponent(claim.id)}/session`, {
-      method: 'POST',
-      body: {
-        runtimeSessionId: created.session_id,
-        storedSessionId: created.stored_session_id ?? null,
-      },
-    })
-    this.bind(claim.id, created.session_id)
-
-    if (claim.kind === 'classification') {
-      const result = (await this.request('llm.oneshot', {
-        session_id: created.session_id,
-        instructions: claim.instructions ?? '',
-        input: claim.input ?? '',
-        task: 'hermes_crew_classifier',
-        max_tokens: claim.maxTokens,
-        temperature: claim.temperature,
-      })) as OneShotResult
-      await this.rest(`/dispatch/${encodeURIComponent(claim.id)}/classification`, {
+    let runtimeSessionId: string | null = null
+    try {
+      const created = (await this.request(
+        'session.create',
+        sessionCreateParams(claim),
+      )) as SessionCreateResult
+      runtimeSessionId = created.session_id
+      await this.rest(`/dispatch/${encodeURIComponent(claim.id)}/session`, {
         method: 'POST',
-        body: { rawResult: result.text ?? '' },
+        body: {
+          runtimeSessionId: created.session_id,
+          storedSessionId: created.stored_session_id ?? null,
+        },
       })
-      this.unbind(claim.id, created.session_id)
+      this.bind(claim.id, created.session_id)
+
+      if (claim.kind === 'classification') {
+        const result = (await this.request('llm.oneshot', {
+          session_id: created.session_id,
+          instructions: claim.instructions ?? '',
+          input: claim.input ?? '',
+          task: 'hermes_crew_classifier',
+          max_tokens: claim.maxTokens,
+          temperature: claim.temperature,
+        })) as OneShotResult
+        await this.rest(`/dispatch/${encodeURIComponent(claim.id)}/classification`, {
+          method: 'POST',
+          body: { rawResult: result.text ?? '' },
+        })
+        this.unbind(claim.id, created.session_id)
+        return true
+      }
+
+      await this.request('prompt.submit', {
+        session_id: created.session_id,
+        text: claim.context,
+      })
+      return true
+    } catch (error) {
+      if (runtimeSessionId) this.unbind(claim.id, runtimeSessionId)
+      await this.rest(`/dispatch/${encodeURIComponent(claim.id)}/fail`, {
+        method: 'POST',
+        body: { error: dispatchError(error) },
+      })
       return true
     }
-
-    await this.request('prompt.submit', {
-      session_id: created.session_id,
-      text: claim.context,
-    })
-    return true
   }
 
   async handleGatewayEvent(event: RpcEvent): Promise<void> {

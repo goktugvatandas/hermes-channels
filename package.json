@@ -10,6 +10,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "test": "vitest run",
+    "test:acceptance": "vitest run tests/e2e/crew.spec.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:py": "pytest -q",
     "verify:dist": "node scripts/verify-dist.mjs",

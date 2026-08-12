@@ -28,3 +28,6 @@ addopts = "--strict-config --strict-markers"
 pythonpath = ["src/backend"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+  "acceptance: end-to-end Hermes Crew coordination scenarios",
+]

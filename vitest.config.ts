@@ -11,7 +11,11 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
-    include: ['tests/desktop/**/*.test.ts', 'tests/desktop/**/*.test.tsx'],
+    include: [
+      'tests/desktop/**/*.test.ts',
+      'tests/desktop/**/*.test.tsx',
+      'tests/e2e/**/*.spec.ts',
+    ],
     restoreMocks: true,
   },
 })

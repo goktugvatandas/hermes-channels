@@ -301,6 +301,66 @@ async def test_dispatch_approval_completion_cancel_retry_and_activity_cursor(tmp
 
 
 @pytest.mark.asyncio
+async def test_dispatch_failure_is_durable_and_visible_to_the_activity_journal(tmp_path):
+    """Gateway readiness errors must release claimed work instead of stranding it."""
+    async with _client(_app(tmp_path)) as client:
+        channel = await _create_channel(client)
+        posted = (
+            await client.post(
+                f"{PREFIX}/channels/{channel['id']}/messages",
+                json={"content": "Run it", "idempotencyKey": "composer-fail"},
+            )
+        ).json()
+        turn_id = posted["turnIds"][0]
+        await client.post(
+            f"{PREFIX}/dispatch/claim", json={"workerId": "desktop-a"}
+        )
+
+        failed = await client.post(
+            f"{PREFIX}/dispatch/{turn_id}/fail",
+            json={"error": "profile atlas has no configured model"},
+        )
+
+        assert failed.status_code == 200
+        assert failed.json()["state"] == "failed"
+        activity = (await client.get(f"{PREFIX}/events", params={"after": 0})).json()
+        assert activity[-1]["type"] == "failed"
+        assert activity[-1]["payload"] == {
+            "error": "profile atlas has no configured model"
+        }
+
+
+@pytest.mark.asyncio
+async def test_backend_restart_interrupts_claimed_work(tmp_path):
+    """A fresh backend process must recover durable work before serving claims."""
+    first_app = _app(tmp_path)
+    async with _client(first_app) as client:
+        channel = await _create_channel(client)
+        turn_id = (
+            await client.post(
+                f"{PREFIX}/channels/{channel['id']}/messages",
+                json={"content": "Run once", "idempotencyKey": "restart-api"},
+            )
+        ).json()["turnIds"][0]
+        claimed = await client.post(
+            f"{PREFIX}/dispatch/claim", json={"workerId": "desktop-a"}
+        )
+        assert claimed.json()["id"] == turn_id
+
+    second_app = _app(tmp_path)
+    async with _client(second_app) as client:
+        assert (await client.get(f"{PREFIX}/health")).status_code == 200
+        activity = (await client.get(f"{PREFIX}/events", params={"after": 0})).json()
+        next_claim = await client.post(
+            f"{PREFIX}/dispatch/claim", json={"workerId": "desktop-b"}
+        )
+
+    assert activity[-1]["type"] == "interrupted"
+    assert activity[-1]["turnId"] == turn_id
+    assert next_claim.status_code == 204
+
+
+@pytest.mark.asyncio
 async def test_websocket_delivers_new_durable_event_and_conflicts_are_structured(tmp_path):
     """Sockets must accelerate persisted events and API conflicts need stable errors."""
     app = _app(tmp_path)

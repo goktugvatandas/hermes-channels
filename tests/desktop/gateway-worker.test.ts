@@ -212,6 +212,19 @@ describe('GatewayWorker', () => {
     })
   })
 
+  it('marks a claimed turn failed when Hermes cannot create its session', async () => {
+    const { request, rest, worker } = setup()
+    request.mockRejectedValueOnce(new Error('profile atlas has no configured model'))
+
+    await expect(worker.claimOnce()).resolves.toBe(true)
+
+    expect(rest).toHaveBeenCalledWith('/dispatch/turn-1/fail', {
+      method: 'POST',
+      body: { error: 'profile atlas has no configured model' },
+    })
+    expect(request).not.toHaveBeenCalledWith('prompt.submit', expect.anything())
+  })
+
   it('flushes matched activity after 100ms and ignores other sessions', async () => {
     vi.useFakeTimers()
     const { rest, worker } = setup()
