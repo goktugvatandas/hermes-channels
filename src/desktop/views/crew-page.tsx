@@ -43,11 +43,11 @@ export function CrewPage({
         setChannels(nextChannels)
         setProfiles(nextProfiles)
         setSelectedId((selected) => {
-          if (selected && nextChannels.some((channel) => channel.id === selected)) return selected
           if (initialChannelId && nextChannels.some((channel) => channel.id === initialChannelId)) {
             return initialChannelId
           }
           if (initialChannelId) onNavigateChannel?.(null)
+          if (selected && nextChannels.some((channel) => channel.id === selected)) return selected
           return nextChannels[0]?.id || null
         })
       })

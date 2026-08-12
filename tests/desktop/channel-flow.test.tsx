@@ -127,6 +127,19 @@ describe('channel flow', () => {
     await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith('research'))
   })
 
+  it('switches the standalone surface when Hermes reuses it for another channel route', async () => {
+    const { api } = apiFixture()
+    const testChannel = { ...channel, id: 'test-channel', name: 'test' }
+    vi.mocked(api.listChannels).mockResolvedValue([channel, testChannel])
+    const { rerender } = render(<CrewPage api={api} initialChannelId={channel.id} />)
+    await screen.findByRole('region', { name: '#general' })
+
+    rerender(<CrewPage api={api} initialChannelId={testChannel.id} />)
+
+    expect(await screen.findByRole('region', { name: '#test' })).not.toBeNull()
+    expect(screen.queryByRole('region', { name: '#general' })).toBeNull()
+  })
+
   it('clears channel visibility in Search and returns native navigation to Crew root', async () => {
     const { api } = apiFixture()
     const onChannelViewed = vi.fn()
