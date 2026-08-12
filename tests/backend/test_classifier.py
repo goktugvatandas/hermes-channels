@@ -62,6 +62,11 @@ def test_enabled_classifier_claim_is_snapshotted_once_before_dispatch(tmp_path):
         rows = connection.execute(
             "SELECT kind, state, provider, model, reasoning_effort FROM turns"
         ).fetchall()
+        activity = connection.execute(
+            "SELECT type, turn_id FROM activity_events WHERE turn_id = ?",
+            (first.id,),
+        ).fetchall()
     assert [tuple(row) for row in rows] == [
         ("classification", "queued", "openai", "gpt-classifier", "low")
     ]
+    assert [tuple(row) for row in activity] == [("queued", first.id)]

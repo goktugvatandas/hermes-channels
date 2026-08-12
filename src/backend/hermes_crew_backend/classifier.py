@@ -128,7 +128,7 @@ class Classifier:
             sort_keys=True,
         )
         with self.repository.database.connect() as connection:
-            connection.execute(
+            inserted = connection.execute(
                 """INSERT OR IGNORE INTO turns (
                        id, channel_id, trigger_message_id, root_message_id,
                        profile_id, kind, trigger, state, depth, idempotency_key,
@@ -151,6 +151,22 @@ class Classifier:
                     created_at,
                 ),
             )
+            if inserted.rowcount == 1:
+                connection.execute(
+                    """INSERT INTO activity_events
+                       (channel_id, turn_id, type, payload_json, created_at)
+                       VALUES (?, ?, 'queued', ?, ?)""",
+                    (
+                        message.channel_id,
+                        claim_id,
+                        json.dumps(
+                            {"kind": "classification"},
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ),
+                        created_at,
+                    ),
+                )
             turn = connection.execute(
                 "SELECT * FROM turns WHERE idempotency_key = ?",
                 (idempotency_key,),
