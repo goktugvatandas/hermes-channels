@@ -34,11 +34,15 @@ export function StudioView({ api, readiness = defaultReadiness }: { api: CrewApi
   useEffect(() => { void Promise.all([api.listProfiles(), api.listChannels()]).then(([nextProfiles, nextChannels]) => { setProfiles(nextProfiles); setChannels(nextChannels); setSelected((value) => value || nextProfiles[0]?.name || '') }) }, [api])
   const profile = profiles.find((item) => item.name === selected) || null
   useEffect(() => {
-    if (!profile) return
+    if (!selected) return
     setMember(null); setRuntime(null); setDiagnostic('')
-    void api.getMember(profile.name).then(setMember).catch(() => setMember(EMPTY_MEMBER(profile.name)))
+    void api.getMember(selected).then(setMember).catch(() => setMember(EMPTY_MEMBER(selected)))
+  }, [api, selected])
+  useEffect(() => {
+    if (!profile) return
+    setRuntime(null)
     void readiness(profile.provider).then(setRuntime).catch((error: unknown) => setRuntime({ ready: false, reason: error instanceof Error ? error.message : 'Readiness check failed', source: 'fallback', checksDisagree: false }))
-  }, [api, profile, readiness])
+  }, [profile?.provider, readiness, selected])
 
   async function create(event: FormEvent) {
     event.preventDefault()

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { CrewApi } from '../../src/desktop/api'
@@ -121,6 +121,47 @@ describe('Crew Studio', () => {
 
     await waitFor(() => expect(calls.patchChannel).toHaveBeenCalledWith('channel-1', { allowedProjects: ['p-web'] }))
     expect(calls.updateMember).toHaveBeenCalledWith('scout', expect.objectContaining({ defaultProject: expect.objectContaining({ projectId: 'p-web' }) }))
+  })
+
+  it('keeps the selected member editor mounted when its model metadata changes', async () => {
+    const calls = fixture()
+    let scoutLoads = 0
+    vi.mocked(calls.api.getMember).mockImplementation(async (name) => {
+      if (name === 'scout' && ++scoutLoads > 1) {
+        return new Promise(() => undefined)
+      }
+      return {
+        profileId: name,
+        displayName: name,
+        role: name === 'atlas' ? 'Engineer' : 'Researcher',
+        color: null,
+        avatar: null,
+        defaultProject: null,
+        archived: false,
+      }
+    })
+    type SavedProfile = Awaited<ReturnType<typeof calls.updateModel>>
+    let resolveModel!: (profile: SavedProfile | PromiseLike<SavedProfile>) => void
+    calls.updateModel.mockImplementation(
+      () => new Promise((resolve) => { resolveModel = resolve }),
+    )
+    render(<StudioView api={calls.api} />)
+    await screen.findByRole('button', { name: 'scout' })
+    fireEvent.click(screen.getByRole('button', { name: 'scout' }))
+    await screen.findByLabelText('Default project')
+    fireEvent.change(screen.getByLabelText('Model'), {
+      target: { value: 'gemini-2.5-flash' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Save model' }))
+    await waitFor(() => expect(calls.updateModel).toHaveBeenCalledOnce())
+
+    await act(async () => {
+      resolveModel({ ...scout, provider: 'google', model: 'gemini-2.5-flash' })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByLabelText('Default project')).not.toBeNull()
+    expect(scoutLoads).toBe(1)
   })
 
   it('shows readiness errors without rendering credential values', async () => {
