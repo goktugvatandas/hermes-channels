@@ -7,7 +7,11 @@ from .repositories import CrewRepository
 
 
 def resolve_project_context(
-    repo: CrewRepository, channel_id: str, message_id: str
+    repo: CrewRepository,
+    channel_id: str,
+    message_id: str,
+    *,
+    target_profile: str | None = None,
 ) -> ProjectRef:
     message = repo.require_message(message_id)
     if message.channel_id != channel_id:
@@ -21,10 +25,9 @@ def resolve_project_context(
     for candidate in (message.project, root.project, channel.default_project):
         if candidate is not None and candidate.mode != "inherit":
             return candidate
+    selected_profile = target_profile or message.target_profile
     member_default = (
-        repo.member_default_project(message.target_profile)
-        if message.target_profile
-        else None
+        repo.member_default_project(selected_profile) if selected_profile else None
     )
     return member_default or ProjectRef(mode="global")
 

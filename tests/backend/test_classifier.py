@@ -38,7 +38,7 @@ def test_classifier_rejects_unknown_members_and_low_confidence(tmp_path):
 def test_enabled_classifier_claim_is_snapshotted_once_before_dispatch(tmp_path):
     """A restart or duplicate planner pass must reuse one durable classifier turn."""
     repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
-    channel = repo.create_channel("general")
+    channel = repo.create_channel("general", purpose="Route requests")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "route this")
     classifier = Classifier(repo)
@@ -56,6 +56,8 @@ def test_enabled_classifier_claim_is_snapshotted_once_before_dispatch(tmp_path):
 
     assert first is not None
     assert duplicate == first
+    assert "approval_request" in first.instructions
+    assert "Route requests" in first.input
     with repo.database.connect() as connection:
         rows = connection.execute(
             "SELECT kind, state, provider, model, reasoning_effort FROM turns"

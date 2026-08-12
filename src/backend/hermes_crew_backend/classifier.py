@@ -6,6 +6,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from .context_builder import ContextBuilder
 from .models import MessageIntent
 from .repositories import CrewRepository
 
@@ -99,24 +100,15 @@ class Classifier:
             return None
         if not config["provider"] or not config["model"]:
             return None
-        members = [
-            member.profile_id
-            for member in self.repository.list_members(message.channel_id)
-            if member.activation_policy != "disabled"
-        ]
-        member_list = ", ".join(members)
-        instructions = (
-            "Return one JSON object with intent, recipients, and confidence only. "
-            f"Allowed recipients: {member_list}. "
-            "When uncertain return "
-            '{"intent":"inform","recipients":[],"confidence":0}.'
-        )
+        instructions, classifier_input = ContextBuilder(
+            self.repository
+        ).for_classifier(message)
         claim_id = uuid4().hex
         created_at = int(time.time() * 1000)
         idempotency_key = f"classifier:{message.id}"
         claim_payload = json.dumps(
             {
-                "input": message.content,
+                "input": classifier_input,
                 "instructions": instructions,
                 "maxTokens": config["max_tokens"],
                 "temperature": 0,
