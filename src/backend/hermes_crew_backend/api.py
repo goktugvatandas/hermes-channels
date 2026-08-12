@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from .classifier import Classifier
 from .db import CrewDatabase
 from .event_bus import EventBus, EventFrame
+from .hermes_adapter import HermesAdapter
 from .models import ActivationPolicy, IntentEnvelope, ProjectRef
 from .repositories import ChannelRecord, CrewRepository, MessageRecord
 from .routing import Router
@@ -98,6 +99,38 @@ class ApprovalInput(ApiModel):
     note: str = ""
 
 
+class ProfileCreate(ApiModel):
+    name: str = Field(min_length=1)
+    no_skills: bool = False
+    clone_from: str | None = None
+    clone_config: bool = False
+    clone_all: bool = False
+    description: str | None = None
+
+
+class ProfilePatch(ApiModel):
+    description: str | None = None
+
+
+class SoulInput(ApiModel):
+    content: str
+
+
+class ModelInput(ApiModel):
+    provider: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+
+class EnabledInput(ApiModel):
+    enabled: list[str]
+
+
+class ProjectValidationInput(ApiModel):
+    profile: str = Field(min_length=1)
+    project_id: str = Field(min_length=1)
+    cwd: str | None = None
+
+
 class CrewRoute(APIRoute):
     def get_route_handler(self):
         original = super().get_route_handler()
@@ -142,6 +175,7 @@ class BackendServices:
     repository: CrewRepository | None = None
     bus: EventBus | None = None
     scheduler: Scheduler | None = None
+    adapter: HermesAdapter | None = None
 
     def load(self) -> "BackendServices":
         if self.database is None:
@@ -149,6 +183,8 @@ class BackendServices:
             self.repository = CrewRepository(self.database)
             self.bus = EventBus()
             self.scheduler = Scheduler(self.repository, event_bus=self.bus)
+        if self.adapter is None:
+            self.adapter = HermesAdapter()
         return self
 
 
@@ -220,8 +256,14 @@ def _approval(record: ApprovalRecord) -> dict[str, Any]:
     }
 
 
-def create_router(database_path: str | Path | None = None) -> APIRouter:
-    services = BackendServices(Path(database_path or _default_database_path()))
+def create_router(
+    database_path: str | Path | None = None,
+    *,
+    hermes_adapter: HermesAdapter | None = None,
+) -> APIRouter:
+    services = BackendServices(
+        Path(database_path or _default_database_path()), adapter=hermes_adapter
+    )
     api = APIRouter(route_class=CrewRoute)
 
     def loaded() -> BackendServices:
@@ -305,6 +347,93 @@ def create_router(database_path: str | Path | None = None) -> APIRouter:
         return [
             _message(item) for item in service.repository.get_thread(root_message_id)
         ]
+
+    @api.get("/profiles")
+    async def list_profiles() -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.list_profiles()
+
+    @api.post("/profiles", status_code=201)
+    async def create_profile(body: ProfileCreate) -> dict[str, Any]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.create_profile(
+            body.name,
+            no_skills=body.no_skills,
+            clone_from=body.clone_from,
+            clone_config=body.clone_config,
+            clone_all=body.clone_all,
+            description=body.description,
+        )
+
+    @api.get("/profiles/{name}")
+    async def get_profile(name: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.get_profile(name)
+
+    @api.patch("/profiles/{name}")
+    async def patch_profile(name: str, body: ProfilePatch) -> dict[str, Any]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.update_profile(name, description=body.description)
+
+    @api.get("/profiles/{name}/soul")
+    async def get_soul(name: str) -> dict[str, str]:
+        service = loaded()
+        assert service.adapter is not None
+        return {"content": service.adapter.read_soul(name)}
+
+    @api.put("/profiles/{name}/soul")
+    async def put_soul(name: str, body: SoulInput) -> dict[str, str]:
+        service = loaded()
+        assert service.adapter is not None
+        return {"content": service.adapter.write_soul(name, body.content)}
+
+    @api.put("/profiles/{name}/model")
+    async def put_model(name: str, body: ModelInput) -> dict[str, Any]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.set_model(name, provider=body.provider, model=body.model)
+
+    @api.get("/profiles/{name}/skills")
+    async def get_skills(name: str) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.list_skills(name)
+
+    @api.put("/profiles/{name}/skills")
+    async def put_skills(name: str, body: EnabledInput) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.set_skills(name, enabled=body.enabled)
+
+    @api.get("/profiles/{name}/toolsets")
+    async def get_toolsets(name: str) -> dict[str, list[str]]:
+        service = loaded()
+        assert service.adapter is not None
+        return {"enabled": service.adapter.list_toolsets(name)}
+
+    @api.put("/profiles/{name}/toolsets")
+    async def put_toolsets(name: str, body: EnabledInput) -> dict[str, list[str]]:
+        service = loaded()
+        assert service.adapter is not None
+        return {"enabled": service.adapter.set_toolsets(name, enabled=body.enabled)}
+
+    @api.get("/projects")
+    async def list_projects(profile: str) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.list_projects(profile)
+
+    @api.post("/projects/validate")
+    async def validate_project(body: ProjectValidationInput) -> dict[str, Any]:
+        service = loaded()
+        assert service.adapter is not None
+        return service.adapter.validate_project(
+            body.profile, body.project_id, body.cwd
+        ).model_dump(mode="json", by_alias=True)
 
     @api.post("/dispatch/claim")
     async def claim_dispatch(body: ClaimInput):

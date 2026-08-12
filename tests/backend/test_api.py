@@ -6,14 +6,18 @@ import httpx
 import pytest
 
 from hermes_crew_backend.api import create_router
+from hermes_crew_backend.models import ProjectRef
 
 
 PREFIX = "/api/plugins/hermes-crew"
 
 
-def _app(tmp_path) -> FastAPI:
+def _app(tmp_path, hermes_adapter=None) -> FastAPI:
     app = FastAPI()
-    app.include_router(create_router(tmp_path / "crew.db"), prefix=PREFIX)
+    app.include_router(
+        create_router(tmp_path / "crew.db", hermes_adapter=hermes_adapter),
+        prefix=PREFIX,
+    )
     return app
 
 
@@ -218,3 +222,118 @@ async def test_websocket_delivers_new_durable_event_and_conflicts_are_structured
             )
         ).json()[0]
         assert polled == frame
+
+
+class StubHermesAdapter:
+    def __init__(self):
+        self.profile = {
+            "name": "atlas",
+            "provider": "openai",
+            "model": "gpt-old",
+            "hasEnv": True,
+        }
+        self.soul = "Old soul"
+        self.skills = [{"name": "github", "enabled": True}]
+        self.toolsets = ["terminal"]
+
+    def list_profiles(self):
+        return [self.profile]
+
+    def create_profile(self, name, **kwargs):
+        self.profile = {**self.profile, "name": name}
+        return self.profile
+
+    def get_profile(self, name):
+        if name != self.profile["name"]:
+            raise KeyError(name)
+        return self.profile
+
+    def update_profile(self, name, *, description=None):
+        self.get_profile(name)
+        self.profile["description"] = description
+        return self.profile
+
+    def read_soul(self, name):
+        self.get_profile(name)
+        return self.soul
+
+    def write_soul(self, name, content):
+        self.get_profile(name)
+        self.soul = content
+        return content
+
+    def set_model(self, name, *, provider, model):
+        self.get_profile(name)
+        self.profile.update(provider=provider, model=model)
+        return self.profile
+
+    def list_skills(self, name):
+        self.get_profile(name)
+        return self.skills
+
+    def set_skills(self, name, *, enabled):
+        self.get_profile(name)
+        self.skills = [{"name": value, "enabled": True} for value in enabled]
+        return self.skills
+
+    def list_toolsets(self, name):
+        self.get_profile(name)
+        return self.toolsets
+
+    def set_toolsets(self, name, *, enabled):
+        self.get_profile(name)
+        self.toolsets = enabled
+        return enabled
+
+    def list_projects(self, name):
+        self.get_profile(name)
+        return [{"id": "p_web", "name": "Web", "primaryPath": "/work/web"}]
+
+    def validate_project(self, name, project_id, cwd=None):
+        self.get_profile(name)
+        if project_id != "p_web":
+            raise ValueError("unknown active project")
+        return ProjectRef(
+            mode="project",
+            profile=name,
+            project_id=project_id,
+            label="Web",
+            cwd="/work/web",
+        )
+
+
+@pytest.mark.asyncio
+async def test_profile_studio_and_project_routes_delegate_without_secret_values(tmp_path):
+    """Studio routes must expose independent config controls but no credential data."""
+    adapter = StubHermesAdapter()
+    async with _client(_app(tmp_path, adapter)) as client:
+        assert (await client.get(f"{PREFIX}/profiles")).json()[0]["name"] == "atlas"
+        assert (
+            await client.put(
+                f"{PREFIX}/profiles/atlas/model",
+                json={"provider": "google", "model": "gemini-3"},
+            )
+        ).json()["model"] == "gemini-3"
+        assert (
+            await client.put(
+                f"{PREFIX}/profiles/atlas/soul", json={"content": "New soul"}
+            )
+        ).json() == {"content": "New soul"}
+        assert (
+            await client.put(
+                f"{PREFIX}/profiles/atlas/skills", json={"enabled": ["research"]}
+            )
+        ).json() == [{"name": "research", "enabled": True}]
+        assert (
+            await client.put(
+                f"{PREFIX}/profiles/atlas/toolsets", json={"enabled": ["browser"]}
+            )
+        ).json() == {"enabled": ["browser"]}
+        project = (
+            await client.post(
+                f"{PREFIX}/projects/validate",
+                json={"profile": "atlas", "projectId": "p_web", "cwd": "/work/web"},
+            )
+        ).json()
+        assert project["projectId"] == "p_web"
+        assert "secret" not in repr((await client.get(f"{PREFIX}/profiles")).json())
