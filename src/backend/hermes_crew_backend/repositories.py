@@ -129,6 +129,46 @@ class CrewRepository:
             ).fetchall()
         return [self._channel_from_row(row) for row in rows]
 
+    def update_channel(
+        self,
+        channel_id: str,
+        **changes: Any,
+    ) -> ChannelRecord:
+        allowed = {
+            "name": "name",
+            "purpose": "purpose",
+            "topic": "topic",
+            "default_responder_profile": "default_responder_profile",
+            "default_project": "default_project_json",
+            "allowed_projects": "allowed_projects_json",
+            "routing_rules": "routing_rules_json",
+        }
+        unknown = set(changes) - set(allowed)
+        if unknown:
+            raise ValueError(f"unsupported channel fields: {sorted(unknown)}")
+        self.require_channel(channel_id)
+        if not changes:
+            return self.require_channel(channel_id)
+        assignments: list[str] = []
+        values: list[Any] = []
+        for field, value in changes.items():
+            assignments.append(f"{allowed[field]} = ?")
+            if field == "default_project":
+                values.append(_dump_project(value))
+            elif field in {"allowed_projects", "routing_rules"}:
+                values.append(_canonical_json(value))
+            elif isinstance(value, str):
+                values.append(value.strip())
+            else:
+                values.append(value)
+        assignments.append("updated_at = ?")
+        values.extend((_now_ms(), channel_id))
+        with self.database.connect() as connection:
+            connection.execute(
+                f"UPDATE channels SET {', '.join(assignments)} WHERE id = ?", values
+            )
+        return self.require_channel(channel_id)
+
     def add_member(
         self,
         channel_id: str,

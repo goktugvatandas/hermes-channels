@@ -1,0 +1,6 @@
+{
+  "name": "hermes-crew",
+  "label": "Hermes Crew",
+  "version": "0.1.0",
+  "api": "plugin_api.py"
+}
