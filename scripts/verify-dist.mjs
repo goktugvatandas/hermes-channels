@@ -26,6 +26,9 @@ async function files(directory) {
 
 const secretAssignment = /\b(?:OPENAI|ANTHROPIC|GOOGLE|GEMINI|NOUS|API)_?(?:API_)?KEY\s*=\s*["']?[A-Za-z0-9_-]{12,}/i
 for (const path of await files(dist)) {
+  if (path.includes('__pycache__') || path.endsWith('.pyc')) {
+    throw new Error(`Python bytecode leaked into distribution: ${path}`)
+  }
   if (!['.js', '.py', '.json', '.yaml', '.yml', '.txt'].includes(extname(path))) continue
   if (secretAssignment.test(await readFile(path, 'utf8'))) throw new Error(`Possible credential assignment in ${path}`)
 }

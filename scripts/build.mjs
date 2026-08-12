@@ -6,6 +6,7 @@ import { build } from 'esbuild'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = resolve(root, 'dist/desktop-plugins/hermes-crew/plugin.js')
+const excludePythonBytecode = (path) => !path.includes('__pycache__') && !path.endsWith('.pyc')
 
 await rm(resolve(root, 'dist'), { recursive: true, force: true })
 await mkdir(dirname(output), { recursive: true })
@@ -23,12 +24,15 @@ await build({
   sourcemap: false,
 })
 
-await cp(resolve(root, 'plugin'), resolve(root, 'dist/plugins/hermes-crew'), { recursive: true })
+await cp(resolve(root, 'plugin'), resolve(root, 'dist/plugins/hermes-crew'), {
+  recursive: true,
+  filter: excludePythonBytecode,
+})
 await cp(
   resolve(root, 'src/backend/hermes_crew_backend'),
   resolve(root, 'dist/plugins/hermes-crew/dashboard/hermes_crew_backend'),
   {
     recursive: true,
-    filter: (path) => !path.includes('__pycache__') && !path.endsWith('.pyc'),
+    filter: excludePythonBytecode,
   },
 )
