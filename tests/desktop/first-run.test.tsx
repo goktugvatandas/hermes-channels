@@ -14,23 +14,16 @@ const atlas: HermesProfile = {
 
 describe('FirstRun', () => {
   it('creates global #general with one always-on responder and classifier off', async () => {
-    const createChannel = vi.fn(async () => ({ id: 'channel-1', name: 'general' }))
-    const updateClassifier = vi.fn(async () => ({ enabled: false }))
+    const onboard = vi.fn(async () => ({ id: 'channel-1', name: 'general' }))
     const onComplete = vi.fn()
-    const api = { createChannel, updateClassifier } as unknown as CrewApi
+    const api = { onboard } as unknown as CrewApi
     render(<FirstRun api={api} onComplete={onComplete} profiles={[atlas]} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Create Crew' }))
 
-    await waitFor(() => expect(createChannel).toHaveBeenCalledWith({
-      name: 'general', purpose: 'Coordinate work with your Hermes crew',
-      defaultResponderProfile: 'atlas', defaultProject: { mode: 'global' },
-      members: [{ profileId: 'atlas', activationPolicy: 'always' }],
+    await waitFor(() => expect(onboard).toHaveBeenCalledWith({
+      defaultResponderProfile: 'atlas', profiles: ['atlas'],
     }))
-    expect(updateClassifier).toHaveBeenCalledWith('channel-1', {
-      enabled: false, provider: null, model: null, reasoningEffort: null,
-      maxTokens: 300, confidenceThreshold: 0.65,
-    })
     expect(onComplete).toHaveBeenCalled()
   })
 })

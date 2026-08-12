@@ -11,14 +11,10 @@ export function FirstRun({ api, profiles, onComplete }: { api: CrewApi; profiles
     if (!responder) return
     setBusy(true); setError('')
     try {
-      const channel = await api.createChannel({
-        name: 'general',
-        purpose: 'Coordinate work with your Hermes crew',
+      const channel = await api.onboard({
         defaultResponderProfile: responder,
-        defaultProject: { mode: 'global' },
-        members: profiles.map((profile) => ({ profileId: profile.name, activationPolicy: profile.name === responder ? 'always' : 'mentioned' })),
+        profiles: profiles.map((profile) => profile.name),
       })
-      await api.updateClassifier(channel.id, { enabled: false, provider: null, model: null, reasoningEffort: null, maxTokens: 300, confidenceThreshold: 0.65 })
       onComplete(channel)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Crew setup failed')

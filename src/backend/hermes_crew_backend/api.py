@@ -160,6 +160,11 @@ class ProjectValidationInput(ApiModel):
     cwd: str | None = None
 
 
+class OnboardingInput(ApiModel):
+    default_responder_profile: str = Field(min_length=1)
+    profiles: list[str] = Field(min_length=1)
+
+
 class CrewRoute(APIRoute):
     def get_route_handler(self):
         original = super().get_route_handler()
@@ -326,6 +331,16 @@ def create_router(
     async def health() -> dict[str, Any]:
         loaded()
         return {"ok": True, "service": "hermes-crew"}
+
+    @api.post("/onboarding")
+    async def onboarding(body: OnboardingInput) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        return _channel(
+            service.repository.onboard(
+                body.default_responder_profile, body.profiles
+            )
+        )
 
     @api.get("/channels")
     async def list_channels() -> list[dict[str, Any]]:
@@ -641,6 +656,38 @@ def create_router(
         return [
             _frame(item)
             for item in service.scheduler.events_after(after, channel_id=channel_id)
+        ]
+
+    @api.get("/search")
+    async def search(
+        q: str = "",
+        channel_id: str | None = None,
+        member: str | None = None,
+        project: str | None = None,
+        state: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.repository is not None
+        return [
+            {
+                "kind": item.kind,
+                "sourceId": item.source_id,
+                "channelId": item.channel_id,
+                "memberId": item.member_id,
+                "projectId": item.project_id,
+                "state": item.state,
+                "text": item.text,
+                "createdAt": item.created_at,
+            }
+            for item in service.repository.search(
+                query=q,
+                channel_id=channel_id,
+                member=member,
+                project=project,
+                state=state,
+                limit=limit,
+            )
         ]
 
     @api.websocket("/events")

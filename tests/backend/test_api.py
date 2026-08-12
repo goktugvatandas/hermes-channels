@@ -141,6 +141,96 @@ async def test_studio_member_behavior_and_classifier_routes(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_first_run_is_one_idempotent_backend_command(tmp_path):
+    """Onboarding must not leave a half-created channel or enabled classifier."""
+    async with _client(_app(tmp_path)) as client:
+        body = {
+            "defaultResponderProfile": "atlas",
+            "profiles": ["atlas", "scout"],
+        }
+        first = await client.post(f"{PREFIX}/onboarding", json=body)
+        second = await client.post(f"{PREFIX}/onboarding", json=body)
+
+        assert first.status_code == second.status_code == 200
+        assert second.json()["id"] == first.json()["id"]
+        channels = (await client.get(f"{PREFIX}/channels")).json()
+        assert [channel["name"] for channel in channels] == ["general"]
+        members = (
+            await client.get(f"{PREFIX}/channels/{first.json()['id']}/members")
+        ).json()
+        assert [(item["profileId"], item["activationPolicy"]) for item in members] == [
+            ("atlas", "always"),
+            ("scout", "mentioned"),
+        ]
+        classifier = (
+            await client.get(f"{PREFIX}/channels/{first.json()['id']}/classifier")
+        ).json()
+        assert classifier["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_search_filters_message_and_activity_documents(tmp_path):
+    """Search facets must narrow the FTS index without leaking other channels."""
+    async with _client(_app(tmp_path)) as client:
+        general = await _create_channel(client)
+        web = (
+            await client.post(
+                f"{PREFIX}/channels",
+                json={
+                    "name": "web",
+                    "members": [
+                        {"profileId": "scout", "activationPolicy": "always"}
+                    ],
+                },
+            )
+        ).json()
+        await client.post(
+            f"{PREFIX}/channels/{general['id']}/messages",
+            json={"content": "Investigate database latency", "idempotencyKey": "search-1"},
+        )
+        receipt = (
+            await client.post(
+                f"{PREFIX}/channels/{web['id']}/messages",
+                json={
+                    "content": "Audit web rendering",
+                    "idempotencyKey": "search-2",
+                    "project": {
+                        "mode": "project",
+                        "profile": "scout",
+                        "projectId": "p-web",
+                        "label": "Web",
+                        "cwd": "/work/web",
+                    },
+                },
+            )
+        ).json()
+        turn_id = receipt["turnIds"][0]
+        await client.post(f"{PREFIX}/turns/{turn_id}/cancel")
+
+        text_results = (
+            await client.get(f"{PREFIX}/search", params={"q": "rendering"})
+        ).json()
+        assert [(item["kind"], item["channelId"]) for item in text_results] == [
+            ("message", web["id"])
+        ]
+        project_results = (
+            await client.get(
+                f"{PREFIX}/search",
+                params={"project": "p-web", "channelId": web["id"]},
+            )
+        ).json()
+        assert any(item["text"] == "Audit web rendering" for item in project_results)
+        state_results = (
+            await client.get(
+                f"{PREFIX}/search",
+                params={"state": "cancelled", "member": "scout"},
+            )
+        ).json()
+        assert len(state_results) == 1
+        assert state_results[0]["kind"] == "activity"
+
+
+@pytest.mark.asyncio
 async def test_dispatch_approval_completion_cancel_retry_and_activity_cursor(tmp_path):
     """Desktop worker control routes must operate on one durable turn at a time."""
     async with _client(_app(tmp_path)) as client:

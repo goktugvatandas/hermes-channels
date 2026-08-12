@@ -211,6 +211,65 @@ CREATE TABLE IF NOT EXISTS attachments (
 );
 """
 
+MIGRATION_2 = """
+CREATE VIRTUAL TABLE IF NOT EXISTS search_documents USING fts5(
+    kind UNINDEXED,
+    source_id UNINDEXED,
+    channel_id UNINDEXED,
+    member_id UNINDEXED,
+    project_id UNINDEXED,
+    state UNINDEXED,
+    text,
+    created_at UNINDEXED
+);
+
+INSERT INTO search_documents
+    (kind, source_id, channel_id, member_id, project_id, state, text, created_at)
+SELECT
+    'message', id, channel_id, COALESCE(author_profile_id, ''),
+    COALESCE(json_extract(project_json, '$.projectId'), ''), '', content, created_at
+FROM messages;
+
+INSERT INTO search_documents
+    (kind, source_id, channel_id, member_id, project_id, state, text, created_at)
+SELECT
+    'activity', CAST(activity_events.sequence AS TEXT), activity_events.channel_id,
+    COALESCE((SELECT profile_id FROM turns WHERE turns.id = activity_events.turn_id), ''),
+    COALESCE(json_extract((SELECT project_json FROM turns WHERE turns.id = activity_events.turn_id), '$.projectId'), ''),
+    activity_events.type, activity_events.payload_json, activity_events.created_at
+FROM activity_events;
+
+CREATE TRIGGER IF NOT EXISTS search_message_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO search_documents
+        (kind, source_id, channel_id, member_id, project_id, state, text, created_at)
+    VALUES (
+        'message', new.id, new.channel_id, COALESCE(new.author_profile_id, ''),
+        COALESCE(json_extract(new.project_json, '$.projectId'), ''), '', new.content,
+        new.created_at
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_message_delete AFTER DELETE ON messages BEGIN
+    DELETE FROM search_documents WHERE kind = 'message' AND source_id = old.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_activity_insert AFTER INSERT ON activity_events BEGIN
+    INSERT INTO search_documents
+        (kind, source_id, channel_id, member_id, project_id, state, text, created_at)
+    VALUES (
+        'activity', CAST(new.sequence AS TEXT), new.channel_id,
+        COALESCE((SELECT profile_id FROM turns WHERE turns.id = new.turn_id), ''),
+        COALESCE(json_extract((SELECT project_json FROM turns WHERE turns.id = new.turn_id), '$.projectId'), ''),
+        new.type, new.payload_json, new.created_at
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS search_activity_delete AFTER DELETE ON activity_events BEGIN
+    DELETE FROM search_documents
+    WHERE kind = 'activity' AND source_id = CAST(old.sequence AS TEXT);
+END;
+"""
+
 
 class CrewDatabase:
     """Owns safe SQLite connections and forward-only Crew migrations."""
@@ -244,3 +303,12 @@ class CrewDatabase:
                 "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                 (1, int(time.time() * 1000)),
             )
+            applied = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 2"
+            ).fetchone()
+            if applied is None:
+                connection.executescript(MIGRATION_2)
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (2, int(time.time() * 1000)),
+                )

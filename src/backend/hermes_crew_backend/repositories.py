@@ -82,6 +82,18 @@ class MessageRecord:
     created_at: int
 
 
+@dataclass(frozen=True, slots=True)
+class SearchRecord:
+    kind: str
+    source_id: str
+    channel_id: str
+    member_id: str
+    project_id: str
+    state: str
+    text: str
+    created_at: int
+
+
 class CrewRepository:
     """Small command-oriented repository with one transaction per mutation."""
 
@@ -125,6 +137,67 @@ class CrewRepository:
                 ),
             )
         return self.require_channel(channel_id)
+
+    def onboard(self, default_responder_profile: str, profiles: list[str]) -> ChannelRecord:
+        responder = default_responder_profile.strip()
+        normalized_profiles = list(dict.fromkeys(value.strip() for value in profiles if value.strip()))
+        if not responder or responder not in normalized_profiles:
+            raise ValueError("default responder must be one of the selected profiles")
+        now = _now_ms()
+        channel_id = uuid4().hex
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT * FROM channels WHERE name = 'general'"
+            ).fetchone()
+            if existing is not None:
+                return self._channel_from_row(existing)
+            connection.execute(
+                """INSERT INTO channels (
+                       id, name, purpose, topic, default_responder_profile,
+                       default_project_json, allowed_projects_json,
+                       routing_rules_json, created_at, updated_at
+                   ) VALUES (?, 'general', ?, '', ?, ?, '[]', '{}', ?, ?)""",
+                (
+                    channel_id,
+                    "Coordinate work with your Hermes crew",
+                    responder,
+                    _dump_project(ProjectRef(mode="global")),
+                    now,
+                    now,
+                ),
+            )
+            for profile_id in normalized_profiles:
+                connection.execute(
+                    """INSERT OR IGNORE INTO member_presentation
+                       (profile_id, display_name, role, archived, updated_at)
+                       VALUES (?, ?, '', 0, ?)""",
+                    (profile_id, profile_id, now),
+                )
+                connection.execute(
+                    """INSERT INTO channel_members
+                       (channel_id, profile_id, activation_policy, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (
+                        channel_id,
+                        profile_id,
+                        "always" if profile_id == responder else "mentioned",
+                        now,
+                        now,
+                    ),
+                )
+            connection.execute(
+                """INSERT INTO classifier_configs
+                   (channel_id, enabled, provider, model, reasoning_effort,
+                    max_tokens, confidence_threshold, updated_at)
+                   VALUES (?, 0, NULL, NULL, NULL, 300, 0.65, ?)""",
+                (channel_id, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM channels WHERE id = ?", (channel_id,)
+            ).fetchone()
+        assert row is not None
+        return self._channel_from_row(row)
 
     def require_channel(self, channel_id: str) -> ChannelRecord:
         with self.database.connect() as connection:
@@ -468,6 +541,44 @@ class CrewRepository:
                 (root.channel_id, root_message_id, root_message_id, root_message_id),
             ).fetchall()
         return [self._message_from_row(row) for row in rows]
+
+    def search(
+        self,
+        *,
+        query: str = "",
+        channel_id: str | None = None,
+        member: str | None = None,
+        project: str | None = None,
+        state: str | None = None,
+        limit: int = 100,
+    ) -> list[SearchRecord]:
+        clauses: list[str] = []
+        values: list[Any] = []
+        normalized_query = query.strip()
+        if normalized_query:
+            clauses.append("search_documents MATCH ?")
+            values.append(f'"{normalized_query.replace(chr(34), chr(34) * 2)}"')
+        for column, value in (
+            ("channel_id", channel_id),
+            ("member_id", member),
+            ("project_id", project),
+            ("state", state),
+        ):
+            if value:
+                clauses.append(f"{column} = ?")
+                values.append(value)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        values.append(min(max(limit, 1), 200))
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"""SELECT kind, source_id, channel_id, member_id, project_id,
+                           state, text, CAST(created_at AS INTEGER) AS created_at
+                    FROM search_documents {where}
+                    ORDER BY CAST(created_at AS INTEGER) DESC, source_id DESC
+                    LIMIT ?""",
+                values,
+            ).fetchall()
+        return [SearchRecord(**dict(row)) for row in rows]
 
     @staticmethod
     def _channel_from_row(row: Any) -> ChannelRecord:

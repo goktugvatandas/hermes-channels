@@ -122,6 +122,17 @@ export interface SkillState {
   enabled: boolean
 }
 
+export interface SearchResult {
+  kind: 'message' | 'activity'
+  sourceId: string
+  channelId: string
+  memberId: string
+  projectId: string
+  state: string
+  text: string
+  createdAt: number
+}
+
 export interface EventFrame {
   sequence: number
   type: string

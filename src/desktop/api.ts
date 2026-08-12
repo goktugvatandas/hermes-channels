@@ -11,6 +11,7 @@ import type {
   MessageReceipt,
   ProjectRef,
   SkillState,
+  SearchResult,
 } from './types'
 
 const MUTATION_TIMEOUT_MS = 30_000
@@ -32,6 +33,13 @@ export class CrewApi {
 
   listChannels(): Promise<CrewChannel[]> {
     return this.request('/channels')
+  }
+
+  onboard(body: {
+    defaultResponderProfile: string
+    profiles: string[]
+  }): Promise<CrewChannel> {
+    return this.mutate('/onboarding', 'POST', body)
   }
 
   createChannel(body: Record<string, unknown>): Promise<CrewChannel> {
@@ -146,6 +154,20 @@ export class CrewApi {
 
   events(after = 0): Promise<EventFrame[]> {
     return this.request(`/events?after=${after}`)
+  }
+
+  search(filters: {
+    q?: string
+    channelId?: string
+    member?: string
+    project?: string
+    state?: string
+  }): Promise<SearchResult[]> {
+    const params = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.set(key, value)
+    }
+    return this.request(`/search?${params.toString()}`)
   }
 
   cancelTurn(turnId: string): Promise<Record<string, unknown>> {
