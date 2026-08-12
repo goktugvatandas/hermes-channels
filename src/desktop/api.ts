@@ -1,0 +1,86 @@
+import type { PluginRest, PluginRestOptions } from '@hermes/plugin-sdk'
+
+import type {
+  CrewChannel,
+  CrewMessage,
+  EventFrame,
+  HermesProfile,
+  MessageReceipt,
+  ProjectRef,
+} from './types'
+
+const MUTATION_TIMEOUT_MS = 30_000
+
+export class CrewApi {
+  constructor(private readonly rest: PluginRest) {}
+
+  private request<T>(path: string, options?: PluginRestOptions): Promise<T> {
+    return this.rest<T>(path, options)
+  }
+
+  private mutate<T>(path: string, method: string, body?: unknown): Promise<T> {
+    return this.request<T>(path, { method, body, timeoutMs: MUTATION_TIMEOUT_MS })
+  }
+
+  health(): Promise<{ ok: boolean; service: string }> {
+    return this.request('/health')
+  }
+
+  listChannels(): Promise<CrewChannel[]> {
+    return this.request('/channels')
+  }
+
+  createChannel(body: Record<string, unknown>): Promise<CrewChannel> {
+    return this.mutate('/channels', 'POST', body)
+  }
+
+  patchChannel(id: string, body: Record<string, unknown>): Promise<CrewChannel> {
+    return this.mutate(`/channels/${encodeURIComponent(id)}`, 'PATCH', body)
+  }
+
+  listMessages(channelId: string): Promise<CrewMessage[]> {
+    return this.request(`/channels/${encodeURIComponent(channelId)}/messages`)
+  }
+
+  createMessage(
+    channelId: string,
+    body: {
+      content: string
+      idempotencyKey: string
+      mentions?: string[]
+      rootMessageId?: string | null
+      project?: ProjectRef
+      attachments?: Array<Record<string, unknown>>
+    },
+  ): Promise<MessageReceipt> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/messages`,
+      'POST',
+      body,
+    )
+  }
+
+  getThread(rootMessageId: string): Promise<CrewMessage[]> {
+    return this.request(`/threads/${encodeURIComponent(rootMessageId)}`)
+  }
+
+  listProfiles(): Promise<HermesProfile[]> {
+    return this.request('/profiles')
+  }
+
+  listProjects(profile: string): Promise<Array<Record<string, unknown>>> {
+    return this.request(`/projects?profile=${encodeURIComponent(profile)}`)
+  }
+
+  events(after = 0): Promise<EventFrame[]> {
+    return this.request(`/events?after=${after}`)
+  }
+
+  cancelTurn(turnId: string): Promise<Record<string, unknown>> {
+    return this.mutate(`/turns/${encodeURIComponent(turnId)}/cancel`, 'POST')
+  }
+
+  retryTurn(turnId: string): Promise<Record<string, unknown>> {
+    return this.mutate(`/turns/${encodeURIComponent(turnId)}/retry`, 'POST')
+  }
+}
