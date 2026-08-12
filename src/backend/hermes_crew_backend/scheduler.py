@@ -288,10 +288,17 @@ class Scheduler:
                     None,
                 )
                 journal_type = "waiting_approval"
+                journal_payload = {**payload, "approvalId": approval_id}
             else:
                 journal_type = event_type
+                journal_payload = payload
             frame = self._insert_event(
-                connection, turn.channel_id, turn_id, journal_type, payload, now
+                connection,
+                turn.channel_id,
+                turn_id,
+                journal_type,
+                journal_payload,
+                now,
             )
         self.event_bus.publish(frame)
         return approval or frame

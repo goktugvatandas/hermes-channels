@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { CrewApi } from '../api'
 import { ChannelList } from '../components/channel-list'
+import { ActivityPanel } from '../components/activity-panel'
 import { MemberRoster } from '../components/member-roster'
-import type { CrewChannel, CrewMessage, HermesProfile } from '../types'
+import type { CrewChannel, CrewMessage, EventFrame, HermesProfile } from '../types'
 import { ChannelView } from './channel-view'
 import { ThreadView } from './thread-view'
 
@@ -16,6 +17,8 @@ export function CrewPage({ api }: CrewPageProps) {
   const [profiles, setProfiles] = useState<HermesProfile[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [threadRoot, setThreadRoot] = useState<CrewMessage | null>(null)
+  const [events, setEvents] = useState<EventFrame[]>([])
+  const eventCursor = useRef(0)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -29,6 +32,23 @@ export function CrewPage({ api }: CrewPageProps) {
       })
       .catch((reason: unknown) => { if (current) setError(reason instanceof Error ? reason.message : 'Crew could not be loaded') })
     return () => { current = false }
+  }, [api])
+
+  useEffect(() => {
+    let current = true
+    async function poll() {
+      try {
+        const next = await api.events(eventCursor.current)
+        if (!current || !next.length) return
+        eventCursor.current = Math.max(eventCursor.current, ...next.map((event) => event.sequence))
+        setEvents((existing) => [...existing, ...next].slice(-500))
+      } catch {
+        // Activity polling is a fallback path; the next interval retries.
+      }
+    }
+    void poll()
+    const interval = setInterval(() => void poll(), 2_000)
+    return () => { current = false; clearInterval(interval) }
   }, [api])
 
   const selected = channels.find((channel) => channel.id === selectedId) || null
@@ -52,7 +72,7 @@ export function CrewPage({ api }: CrewPageProps) {
       <section className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[220px_minmax(0,1fr)_280px]">
         <div className="min-h-0 border-r border-(--ui-stroke-secondary)"><ChannelList channels={channels} onCreate={createChannel} onSelect={(id) => { setSelectedId(id); setThreadRoot(null) }} profiles={profiles} selectedId={selectedId} /></div>
         {selected ? <ChannelView api={api} channel={selected} onOpenThread={setThreadRoot} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a channel to assemble your crew.</div>}
-        {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <div className="min-h-0 border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /></div>}
+        {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} onClose={() => setThreadRoot(null)} profiles={profiles} root={threadRoot} /> : <aside className="min-h-0 overflow-auto border-l border-(--ui-stroke-secondary)"><MemberRoster profiles={profiles} /><ActivityPanel api={api} events={events.filter((event) => !selected || event.channelId === selected.id)} /></aside>}
       </section>
     </main>
   )

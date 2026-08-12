@@ -83,4 +83,15 @@ export class CrewApi {
   retryTurn(turnId: string): Promise<Record<string, unknown>> {
     return this.mutate(`/turns/${encodeURIComponent(turnId)}/retry`, 'POST')
   }
+
+  resolveApproval(
+    approvalId: string,
+    body: { decision: 'approve' | 'reject'; note: string },
+  ): Promise<Record<string, unknown>> {
+    return this.mutate(
+      `/approvals/${encodeURIComponent(approvalId)}/resolve`,
+      'POST',
+      body,
+    )
+  }
 }

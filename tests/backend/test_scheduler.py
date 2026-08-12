@@ -71,6 +71,10 @@ def test_approval_resolution_returns_waiting_turn_to_running(tmp_path):
         {"requestId": "approval-1", "prompt": "Allow command?"},
     )
 
+    waiting = scheduler.events_after(0, channel_id=turn.channel_id)[-1]
+    assert waiting.type == "waiting_approval"
+    assert waiting.payload["approvalId"] == approval.id
+
     scheduler.resolve_approval(approval.id, decision="reject", note="not now")
 
     assert scheduler.get(turn.id).state == "running"

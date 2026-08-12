@@ -79,6 +79,7 @@ function apiFixture() {
         { id: 'p-web', name: 'Web', primaryPath: '/work/web', archived: false },
       ]),
       getThread: vi.fn(async () => [rootMessage]),
+      events: vi.fn(async () => []),
       createChannel,
       createMessage,
     } as unknown as CrewApi,
