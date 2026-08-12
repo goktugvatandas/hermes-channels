@@ -34,6 +34,12 @@ declare module '@hermes/plugin-sdk' {
     options?: PluginRestOptions,
   ) => Promise<T>
 
+  export interface PluginStorage {
+    get<T>(key: string, fallback: T): T
+    set(key: string, value: unknown): void
+    remove(key: string): void
+  }
+
   export interface PluginContribution {
     id: string
     area: string
@@ -45,8 +51,10 @@ declare module '@hermes/plugin-sdk' {
   export interface PluginContext {
     rest: PluginRest
     socket: (path: string, onMessage: (data: unknown) => void) => () => void
+    register: (contribution: PluginContribution) => () => void
     registerMany: (contributions: PluginContribution[]) => () => void
     onDispose: (cleanup: () => void) => void
+    storage: PluginStorage
   }
 
   export interface HermesPlugin {
