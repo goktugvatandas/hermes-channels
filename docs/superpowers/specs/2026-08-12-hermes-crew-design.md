@@ -8,6 +8,8 @@
 
 Hermes Crew is a local, single-user collaboration workspace inside Hermes Desktop. It lets one person work with multiple persistent Hermes profiles as visible teammates in shared channels. Each teammate retains an independent identity, SOUL, provider, model, skills, tools, memory, sessions, credentials, workspace settings, and permissions.
 
+The v1 compatibility target is Hermes Agent `0.20.0`. At the pinned upstream reference commit, the nested Desktop package reports `0.17.0`; that package number is tracked as an SDK-contract detail and is not the Hermes Crew compatibility floor.
+
 Crew is a coordination layer over Hermes rather than a replacement runtime. Hermes remains authoritative for profiles, sessions, models, skills, tools, memory, projects, and execution. Crew adds channels, threads, membership, routing policies, structured message intents, agent-to-agent activation controls, project-scoped conversations, activity history, and a role-oriented Crew Studio.
 
 The first release is local-only and single-user. It deliberately excludes shared cloud workspaces and multi-human synchronization.

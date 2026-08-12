@@ -6,11 +6,11 @@
 
 **Architecture:** A maintainable TypeScript/React source tree bundles into the single ESM `plugin.js` required by Hermes Desktop. An always-loaded runtime worker claims durable dispatches from a FastAPI/SQLite backend, invokes Hermes JSON-RPC, and correlates gateway events. The backend owns channels, routing, causal budgets, project/session bindings, approvals, recovery, profile configuration, and the activity journal.
 
-**Tech Stack:** Hermes Desktop Plugin SDK 0.17.0+, React 19, TypeScript 6, esbuild, Vitest, Testing Library, Python 3.11+, FastAPI, Pydantic 2, SQLite, pytest, Playwright.
+**Tech Stack:** Hermes Agent 0.20.0, Hermes Desktop Plugin SDK package 0.17.0, React 19, TypeScript 6, esbuild, Vitest, Testing Library, Python 3.11+, FastAPI, Pydantic 2, SQLite, pytest, Playwright.
 
 ## Global Constraints
 
-- Compatibility floor: Hermes Desktop `0.17.0`; contract reference commit `ee472a7fdbbc55924f91ab122dbaa29bd07668b0` dated 2026-08-12.
+- Compatibility floor: Hermes Agent `0.20.0`; contract reference commit `ee472a7fdbbc55924f91ab122dbaa29bd07668b0` dated 2026-08-12. At that commit, `apps/desktop/package.json` reports package version `0.17.0`; record it for SDK contract tracking, but do not present it as the product compatibility floor.
 - Runtime desktop artifact imports only `@hermes/plugin-sdk`, `react`, and `react/jsx-runtime`; esbuild must bundle every internal frontend module and externalize those three specifiers.
 - Hermes is authoritative for profiles, SOUL, model/provider settings, skills, tools, projects, credentials, and sessions.
 - Crew is local and single-user. Do not add accounts, tenancy, relay synchronization, or non-Hermes runtimes.
@@ -98,7 +98,7 @@ hermes-crew/
 │   ├── package.mjs                       # reproducible release archive
 │   └── verify-dist.mjs                   # import/path/secret checks
 ├── tests/
-│   ├── contracts/hermes-0.17.0.json
+│   ├── contracts/hermes-0.20.0.json
 │   ├── backend/
 │   ├── desktop/
 │   ├── integration/
@@ -116,7 +116,7 @@ hermes-crew/
 - Create: `tsconfig.json`
 - Create: `vitest.config.ts`
 - Create: `.gitignore`
-- Create: `tests/contracts/hermes-0.17.0.json`
+- Create: `tests/contracts/hermes-0.20.0.json`
 - Create: `tests/desktop/contract.test.ts`
 
 **Interfaces:**
@@ -125,10 +125,10 @@ hermes-crew/
 - [ ] **Step 1: Write the failing contract test**
 
 ```ts
-import contract from '../contracts/hermes-0.17.0.json'
+import contract from '../contracts/hermes-0.20.0.json'
 import { describe, expect, it } from 'vitest'
 
-describe('Hermes 0.17.0 contract', () => {
+describe('Hermes Agent 0.20.0 contract', () => {
   it('contains every RPC and event Crew depends on', () => {
     expect(contract.rpcs).toEqual([
       'approval.respond', 'llm.oneshot', 'model.options', 'projects.list', 'prompt.submit',
@@ -152,7 +152,8 @@ Use Node `>=22.22.0`, scripts `build`, `test`, `typecheck`, `test:py`, `verify:d
 
 ```json
 {
-  "hermesDesktop": "0.17.0",
+  "hermesAgent": "0.20.0",
+  "desktopPackage": "0.17.0",
   "upstreamCommit": "ee472a7fdbbc55924f91ab122dbaa29bd07668b0",
   "rpcs": ["approval.respond", "llm.oneshot", "model.options", "projects.list", "prompt.submit", "session.create", "session.interrupt", "session.resume"],
   "events": ["approval.request", "clarify.request", "error", "message.complete", "message.delta", "message.start", "reasoning.delta", "session.info", "status.update", "thinking.delta", "tool.complete", "tool.progress", "tool.start"]
@@ -962,7 +963,7 @@ Search filters messages/activity by channel, member, project, state, and text us
 
 - [ ] **Step 6: Document exact install and recovery paths**
 
-README covers prerequisites, build, install, enable/reload, owner-profile concept, project scoping, permissions warning, database backup, logs, upgrade, uninstall, and the Hermes 0.17.0 floor.
+README covers prerequisites, build, install, enable/reload, owner-profile concept, project scoping, permissions warning, database backup, logs, upgrade, uninstall, and the Hermes Agent 0.20.0 floor. It separately records Desktop package 0.17.0 as the pinned SDK baseline.
 
 - [ ] **Step 7: Run tests**
 
@@ -1018,7 +1019,7 @@ Routing defects go in `routing.py`; persistence/recovery in `scheduler.py`; Herm
 
 - [ ] **Step 4: Run real Hermes smoke test**
 
-Against Hermes Desktop 0.17.0 in a disposable `HERMES_HOME`, install Crew, create two no-skill profiles, assign two configured test models, send one global and one project-bound message, inspect streams, stop one turn, restart Desktop, and verify the ten scenario outcomes in the activity journal. Record the Hermes version, OS, plugin SHA-256, and database schema version in `CHANGELOG.md`.
+Against Hermes Agent 0.20.0 in a disposable `HERMES_HOME`, install Crew in Hermes Desktop, create two no-skill profiles, assign two configured test models, send one global and one project-bound message, inspect streams, stop one turn, restart Desktop, and verify the ten scenario outcomes in the activity journal. Record the Hermes Agent version, Desktop package version, OS, plugin SHA-256, and database schema version in `CHANGELOG.md`.
 
 - [ ] **Step 5: Run final release gate**
 
