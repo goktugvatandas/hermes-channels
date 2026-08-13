@@ -1,0 +1,27 @@
+@layer theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "./";
+
+/*
+ * Hermes Desktop compiles only its own utility classes, so the plugin ships
+ * this stylesheet (scoped to .hermes-crew-desktop at build time) with every
+ * utility Crew uses. Colors bridge to the host's theme tokens so Crew follows
+ * the active Desktop theme; only tokens the host does not define get values.
+ */
+@theme inline {
+  --color-background: var(--crew-host-surface);
+  --color-foreground: var(--crew-host-ink);
+}
+
+.hermes-crew-desktop {
+  display: contents;
+  --crew-host-surface: var(--background, #ffffff);
+  --crew-host-ink: var(--foreground, #1d1f24);
+  --color-background: var(--crew-host-surface);
+  --color-foreground: var(--crew-host-ink);
+  /* The host defines --ui-accent, --ui-stroke-secondary, and --ui-text-*;
+     --ui-surface-secondary is the one Crew token Hermes Desktop lacks. */
+  --ui-surface-secondary: color-mix(in srgb, var(--crew-host-ink) 6%, transparent);
+}

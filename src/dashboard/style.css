@@ -1,0 +1,226 @@
+@layer theme, base, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@source "../desktop";
+@source "./plugin.tsx";
+
+/*
+ * Register the semantic colors with Tailwind so bg-background / text-foreground
+ * utilities are generated for the dashboard build. `inline` keeps them pointing
+ * at the runtime --crew-* tokens, which flip with [data-crew-theme="dark"].
+ */
+@theme inline {
+  --color-background: var(--crew-surface);
+  --color-foreground: var(--crew-ink);
+}
+
+/*
+ * Crew owns its surface design. Host themes (including monochrome ones such
+ * as Nous Blue) only contribute the accent color; text, borders, and surfaces
+ * stay neutral so the workspace reads like the Crew concept in any host.
+ */
+.hermes-crew-dashboard {
+  --crew-ink: #1b1e24;
+  --crew-ink-secondary: #565b64;
+  --crew-ink-tertiary: #83888f;
+  --crew-surface: #ffffff;
+  --crew-surface-raised: #f6f7f8;
+  --crew-stroke: rgb(27 30 36 / 11%);
+  --crew-hover: rgb(27 30 36 / 5%);
+
+  --color-background: var(--crew-surface);
+  --color-foreground: var(--crew-ink);
+  --ui-accent: var(--color-primary, #2563eb);
+  --ui-stroke-secondary: var(--crew-stroke);
+  --ui-surface-secondary: var(--crew-hover);
+  --ui-text-secondary: var(--crew-ink-secondary);
+  --ui-text-tertiary: var(--crew-ink-tertiary);
+
+  background: var(--crew-surface);
+  color: var(--crew-ink);
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  letter-spacing: normal;
+  border-top: 1px solid var(--crew-stroke);
+}
+
+.hermes-crew-dashboard[data-crew-theme="dark"] {
+  --crew-ink: #e6e8eb;
+  --crew-ink-secondary: #a3a8b0;
+  --crew-ink-tertiary: #7c8188;
+  --crew-surface: #17191d;
+  --crew-surface-raised: #1f2227;
+  --crew-stroke: rgb(230 232 235 / 12%);
+  --crew-hover: rgb(230 232 235 / 7%);
+  color-scheme: dark;
+}
+
+@layer base {
+  .hermes-crew-dashboard *,
+  .hermes-crew-dashboard *::before,
+  .hermes-crew-dashboard *::after {
+    box-sizing: border-box;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--crew-ink) 25%, transparent) transparent;
+  }
+
+  .hermes-crew-dashboard h1,
+  .hermes-crew-dashboard h2,
+  .hermes-crew-dashboard h3,
+  .hermes-crew-dashboard p,
+  .hermes-crew-dashboard ol,
+  .hermes-crew-dashboard ul {
+    margin: 0;
+  }
+
+  .hermes-crew-dashboard ol,
+  .hermes-crew-dashboard ul {
+    padding: 0;
+    list-style: none;
+  }
+
+  .hermes-crew-dashboard button,
+  .hermes-crew-dashboard input,
+  .hermes-crew-dashboard select,
+  .hermes-crew-dashboard textarea {
+    font: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    accent-color: var(--ui-accent);
+  }
+
+  .hermes-crew-dashboard button {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+    text-align: inherit;
+  }
+
+  .hermes-crew-dashboard button:disabled {
+    cursor: default;
+  }
+
+  .hermes-crew-dashboard input,
+  .hermes-crew-dashboard textarea {
+    background: transparent;
+    border: 0;
+  }
+
+  .hermes-crew-dashboard select {
+    background: var(--crew-surface);
+    border: 0;
+  }
+
+  .hermes-crew-dashboard ::placeholder {
+    color: var(--crew-ink-tertiary);
+    opacity: 1;
+  }
+
+  .hermes-crew-dashboard :focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 1px;
+  }
+
+  .hermes-crew-dashboard a {
+    color: var(--ui-accent);
+  }
+
+  .hermes-crew-dashboard kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    border: 1px solid var(--crew-stroke);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 4px;
+    background: var(--crew-surface-raised);
+    color: var(--crew-ink-secondary);
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  /*
+   * Hermes Desktop ships the codicon icon font; the dashboard host does not.
+   * These mask-image glyphs cover every codicon Crew renders so icon buttons
+   * never appear as empty squares in the dashboard.
+   */
+  .hermes-crew-dashboard .codicon {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    background-color: currentColor;
+    -webkit-mask: var(--crew-icon, none) center / contain no-repeat;
+    mask: var(--crew-icon, none) center / contain no-repeat;
+  }
+
+  .hermes-crew-dashboard .codicon-close {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M4 4l8 8m0-8l-8 8'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-reply {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 4 3.5 7.5 7 11'/%3E%3Cpath d='M3.5 7.5H9a4 4 0 0 1 4 4V13'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-check {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 8.5 6.5 12 13 4.5'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-copy {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Crect x='5.5' y='5.5' width='7' height='7' rx='1'/%3E%3Cpath d='M10.5 3.5h-6a1 1 0 0 0-1 1v6'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-ellipsis {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Ccircle cx='3.5' cy='8' r='1.4'/%3E%3Ccircle cx='8' cy='8' r='1.4'/%3E%3Ccircle cx='12.5' cy='8' r='1.4'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-info {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='6'/%3E%3Cpath d='M8 7.5V11'/%3E%3Ccircle cx='8' cy='5.1' r='.4' fill='black' stroke='none'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-account {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Ccircle cx='8' cy='5.5' r='2.7'/%3E%3Cpath d='M2.9 13.4a5.3 5.3 0 0 1 10.2 0'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-symbol-method {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Cpath d='M8 1.8 13.4 4.9v6.2L8 14.2 2.6 11.1V4.9z'/%3E%3Cpath d='M2.6 4.9 8 8l5.4-3.1M8 8v6.2'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-git-compare {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='4.5' cy='4' r='1.8'/%3E%3Ccircle cx='11.5' cy='12' r='1.8'/%3E%3Cpath d='M4.5 6v2.5a2 2 0 0 0 2 2H9m0 0L7.5 9M9 10.5 7.5 12'/%3E%3Cpath d='M11.5 10V7.5a2 2 0 0 0-2-2H7m0 0 1.5 1.5M7 5.5 8.5 4'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-extensions {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linejoin='round'%3E%3Crect x='2.5' y='2.5' width='4.8' height='4.8'/%3E%3Crect x='2.5' y='8.7' width='4.8' height='4.8'/%3E%3Crect x='8.7' y='8.7' width='4.8' height='4.8'/%3E%3Crect x='9.7' y='1.5' width='4.8' height='4.8'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-folder {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linejoin='round'%3E%3Cpath d='M2.5 12.5v-8h4l1.5 2h5.5v6z'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-history {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round'%3E%3Cpath d='M8 4.5V8l2.5 1.5'/%3E%3Cpath d='M3.5 8a4.5 4.5 0 1 1 1.3 3.2'/%3E%3Cpath d='M3 6.5v2h2'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-sparkle {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='black'%3E%3Cpath d='M9.5 1.5 11 5l3.5 1.5L11 8l-1.5 3.5L8 8 4.5 6.5 8 5z'/%3E%3Cpath d='M4 9.5 4.9 11.6 7 12.5 4.9 13.4 4 15.5 3.1 13.4 1 12.5 3.1 11.6z'/%3E%3C/svg%3E");
+  }
+
+  .hermes-crew-dashboard .codicon-settings-gear {
+    --crew-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.4' stroke-linecap='round'%3E%3Ccircle cx='8' cy='8' r='2.2'/%3E%3Cpath d='M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6 11 5M5 11l-1.4 1.4'/%3E%3C/svg%3E");
+  }
+}
+
+@media (min-width: 1024px) {
+  .hermes-crew-dashboard [aria-label="Agent Lab"] {
+    grid-template-columns: 200px 120px minmax(360px, 1fr) 230px;
+  }
+
+  .hermes-crew-dashboard [aria-label="Agent Lab"] > [aria-label$="at a glance"] {
+    display: block;
+  }
+}
