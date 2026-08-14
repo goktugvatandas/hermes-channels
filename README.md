@@ -128,8 +128,8 @@ or **connect a board you already use** from a picker of the host's existing
 boards. A toolbar switcher rebinds at any time
 (`GET /channels/{id}/kanban/boards`, `PUT /channels/{id}/kanban/board`).
 
-**Working the board.** Lanes run triage → done (empty planning lanes stay
-hidden). *New card* opens a modal with title, description, assignee from the
+**Working the board.** Lanes mirror the host statuses — triage, to do,
+scheduled, ready, running, blocked, review, done. *New card* opens a modal with title, description, assignee from the
 channel roster, priority, and a triage toggle. Clicking a card opens a
 details modal: status chip, metadata grid (timestamps, model override,
 branch/workspace, failures, dependency links), inline **Edit** for

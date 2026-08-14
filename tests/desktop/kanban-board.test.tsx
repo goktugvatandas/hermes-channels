@@ -70,8 +70,10 @@ describe('KanbanBoard', () => {
     expect(screen.getByText('Being worked')).toBeTruthy()
     expect(screen.getByText('Shipped')).toBeTruthy()
     expect(screen.getByLabelText('Ready')).toBeTruthy()
-    // Empty planning lanes stay hidden on a personal board.
-    expect(screen.queryByLabelText('Triage')).toBeNull()
+    // Every host lane is always on the board, empty or not.
+    for (const lane of ['Triage', 'To Do', 'Scheduled', 'Blocked', 'Review']) {
+      expect(screen.getByLabelText(lane)).toBeTruthy()
+    }
   })
 
   it('files a new card through the API and refreshes', async () => {

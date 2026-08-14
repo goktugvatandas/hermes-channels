@@ -5,8 +5,9 @@
 **Kanban bridge: every channel gets a board.** Channels now surface the host
 Hermes kanban store per channel instead of growing a second card system. Each
 channel maps to one free-standing Hermes board (`channel-<name>` by
-convention, rebindable via `PUT /channels/{id}/kanban/board`), auto-created on
-first open. Because it is the real host store, all fourteen agent kanban tools,
+convention, rebindable via `PUT /channels/{id}/kanban/board`), created or
+connected explicitly from the board pane. Because it is the real host store,
+all fourteen agent kanban tools,
 the dispatcher/worker machinery, and `kanban_notify_subs` keep working
 unchanged — a card filed from a channel is the same card an agent completes
 from its own session.
@@ -19,8 +20,8 @@ from its own session.
   identity), and board rebinding. Host-store-unavailable maps to 503, unknown
   cards to 404, invalid transitions to 422.
 - Desktop: a **Board ⇄ Chat toggle** in the channel header opens a kanban pane
-  in place — lanes for triage/to-do/ready/running/blocked/review/done (empty
-  planning lanes stay hidden), a full **New card** form (title, description,
+  in place — one lane per host status
+  (triage/to-do/scheduled/ready/running/blocked/review/done), a full **New card** form (title, description,
   assignee from the channel roster, priority, triage), a details drawer with
   metadata grid, assignee control, complete/block/unblock/delete, comments,
   event history, and a 15 s refresh while visible.

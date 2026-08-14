@@ -13,10 +13,11 @@ interface KanbanBoardProps {
   memberIds?: string[]
 }
 
-/** Displayed lanes; `todo` absorbs the rarely-hand-touched planning states. */
+/** One lane per host status, in lifecycle order — same lanes as the official board. */
 const LANES: Array<{ id: string; label: string; statuses: KanbanCardStatus[] }> = [
   { id: 'triage', label: 'Triage', statuses: ['triage'] },
-  { id: 'todo', label: 'To Do', statuses: ['todo', 'scheduled'] },
+  { id: 'todo', label: 'To Do', statuses: ['todo'] },
+  { id: 'scheduled', label: 'Scheduled', statuses: ['scheduled'] },
   { id: 'ready', label: 'Ready', statuses: ['ready'] },
   { id: 'running', label: 'Running', statuses: ['running'] },
   { id: 'blocked', label: 'Blocked', statuses: ['blocked'] },
@@ -392,10 +393,6 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-5 py-3">
           {LANES.map((lane) => {
             const laneCards = byLane.get(lane.id) || []
-            if (!laneCards.length && (lane.id === 'triage' || lane.id === 'todo' || lane.id === 'review')) {
-              // Empty planning lanes just eat width on a personal board.
-              return null
-            }
             return (
               <section
                 aria-label={lane.label}
