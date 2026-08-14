@@ -1,6 +1,5 @@
 import {
   ROUTES_AREA,
-  SIDEBAR_NAV_AREA,
   type PluginContext,
   type PluginContribution,
   type PluginStorage,
@@ -12,7 +11,6 @@ import {
   ChannelNavigationController,
   NAVIGATION_STORAGE_KEY,
   type ChannelNavigationState,
-  channelLabel,
   channelPath,
 } from '../../src/desktop/channel-navigation'
 import type { CrewChannel, EventFrame } from '../../src/desktop/types'
@@ -97,7 +95,7 @@ describe('channel navigation SDK contract', () => {
 })
 
 describe('channel navigation reconciliation', () => {
-  it('registers ordered native routes and sidebar rows for current channels', async () => {
+  it('registers native routes for current channels', async () => {
     const { live, register } = registrationHarness()
     const controller = new ChannelNavigationController({
       api: { listChannels: vi.fn(async () => [general, research]) } as unknown as CrewApi,
@@ -109,29 +107,12 @@ describe('channel navigation reconciliation', () => {
 
     await controller.reconcile()
 
-    expect(channelPath('general/id')).toBe('/crew/channel/general%2Fid')
-    expect(channelLabel('general', 0)).toBe('general')
+    expect(channelPath('general/id')).toBe('/channels/channel/general%2Fid')
     expect([...live.values()]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ area: ROUTES_AREA, data: { path: '/crew/channel/general-id' } }),
-      expect.objectContaining({
-        area: SIDEBAR_NAV_AREA,
-        order: 56,
-        data: {
-          codicon: 'symbol-numeric',
-          label: 'general',
-          path: '/crew/channel/general-id',
-        },
-      }),
-      expect.objectContaining({
-        area: SIDEBAR_NAV_AREA,
-        order: 57,
-        data: {
-          codicon: 'symbol-numeric',
-          label: 'research',
-          path: '/crew/channel/research-id',
-        },
-      }),
+      expect.objectContaining({ area: ROUTES_AREA, data: { path: '/channels/channel/general-id' } }),
+      expect.objectContaining({ area: ROUTES_AREA, data: { path: '/channels/channel/research-id' } }),
     ]))
+    expect(controller.channelList().map((channel) => channel.name)).toEqual(['general', 'research'])
   })
 
   it('updates renamed channels and disposes deleted channel contributions', async () => {
@@ -148,12 +129,7 @@ describe('channel navigation reconciliation', () => {
 
     await controller.reconcile([{ ...general, name: 'lobby', updatedAt: 3 }])
 
-    expect([...live.values()]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        area: SIDEBAR_NAV_AREA,
-        data: expect.objectContaining({ label: 'lobby' }),
-      }),
-    ]))
+    expect(controller.channelList().map((channel) => channel.name)).toEqual(['lobby'])
     expect([...live.values()].some((item) => item.id.includes('research-id'))).toBe(false)
   })
 
@@ -189,7 +165,7 @@ describe('channel navigation reconciliation', () => {
 
     await controller.reconcile()
 
-    expect([...live.keys()]).toEqual(['channel-route-general-id', 'channel-nav-general-id'])
+    expect([...live.keys()]).toEqual(['channel-route-general-id'])
   })
 })
 
@@ -207,12 +183,7 @@ describe('channel navigation unread state', () => {
       { sequence: 5, type: 'completed', channelId: general.id, turnId: 'turn-1', payload: { messageId: 'agent-message' } },
     ])
 
-    expect([...live.values()]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        area: SIDEBAR_NAV_AREA,
-        data: expect.objectContaining({ label: 'general (1)' }),
-      }),
-    ]))
+    expect(controller.unreadCount(general.id)).toBe(1)
     expect(storage.get(NAVIGATION_STORAGE_KEY, null)).toEqual({
       version: 1,
       lastEventSequence: 5,
@@ -429,5 +400,33 @@ describe('channel navigation lifecycle', () => {
     expect(socketDispose).toHaveBeenCalledOnce()
     expect(controller.unreadCount(general.id)).toBe(0)
     vi.useRealTimers()
+  })
+})
+
+describe('pane subscriptions', () => {
+  it('notifies listeners on unread changes and keeps routes live', async () => {
+    const { live, register } = registrationHarness()
+    const controller = controllerFixture({ channels: [general, research], register })
+    await controller.reconcile()
+    expect(live.has(`channel-route-${general.id}`)).toBe(true)
+
+    const seen: number[] = []
+    const unsubscribe = controller.subscribe(() => { seen.push(controller.unreadCount(general.id)) })
+
+    controller.processEvents([{
+      sequence: 10,
+      type: 'completed',
+      channelId: general.id,
+      turnId: 't1',
+      payload: { messageId: 'm1' },
+    }])
+    expect(controller.unreadCount(general.id)).toBe(1)
+    expect(seen).toContain(1)
+
+    controller.setViewedChannel(general.id)
+    expect(controller.unreadCount(general.id)).toBe(0)
+
+    unsubscribe()
+    controller.dispose()
   })
 })

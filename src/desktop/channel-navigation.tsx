@@ -1,10 +1,8 @@
 import {
   ROUTES_AREA,
-  SIDEBAR_NAV_AREA,
   type PluginContribution,
   type PluginStorage,
   type RouteContribution,
-  type SidebarNavContribution,
 } from '@hermes/plugin-sdk'
 import type { ReactNode } from 'react'
 
@@ -12,7 +10,6 @@ import type { CrewApi } from './api'
 import type { CrewChannel, EventFrame } from './types'
 
 export const NAVIGATION_STORAGE_KEY = 'channel-navigation-v1'
-const CHANNEL_ORDER_START = 56
 
 export interface ChannelNavigationState {
   version: 1
@@ -32,21 +29,22 @@ interface ChannelNavigationOptions {
 
 interface ChannelRegistration {
   channel: CrewChannel
-  order: number
   routeDispose: () => void
-  sidebarDispose: () => void
 }
 
 export function channelPath(channelId: string): string {
-  return `/crew/channel/${encodeURIComponent(channelId)}`
+  return `/channels/channel/${encodeURIComponent(channelId)}`
 }
 
-export function channelLabel(name: string, unread: number): string {
-  return unread > 0 ? `${name} (${unread})` : name
-}
-
+/**
+ * Keeps channel routes registered and unread counts current for the
+ * CHANNELS pane. Presentation lives entirely in the pane; this controller
+ * owns the data: the channel list, per-channel unread, the viewed channel,
+ * and a subscription hook the pane re-renders from.
+ */
 export class ChannelNavigationController {
   private readonly registrations = new Map<string, ChannelRegistration>()
+  private readonly listeners = new Set<() => void>()
   private channels: CrewChannel[] = []
   private disposed = false
   private readonly hadPersistedState: boolean
@@ -76,7 +74,6 @@ export class ChannelNavigationController {
     for (const [id, registration] of this.registrations) {
       if (nextIds.has(id)) continue
       registration.routeDispose()
-      registration.sidebarDispose()
       this.registrations.delete(id)
     }
 
@@ -89,13 +86,29 @@ export class ChannelNavigationController {
     if (stateChanged) this.persist()
 
     this.channels = [...nextChannels]
-    for (const [index, channel] of nextChannels.entries()) {
+    for (const channel of nextChannels) {
       try {
-        this.registerChannel(channel, index)
+        this.registerChannel(channel)
       } catch {
         // Periodic reconciliation retries this channel without disturbing the rest.
       }
     }
+    this.notifyListeners()
+  }
+
+  /** Channels in workspace order, for the CHANNELS pane. */
+  channelList(): CrewChannel[] {
+    return this.channels
+  }
+
+  viewedChannel(): string | null {
+    return this.viewedChannelId
+  }
+
+  /** Re-render hook for the pane: fires on channel, unread, or view changes. */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
   }
 
   upsertChannel(channel: CrewChannel): void {
@@ -133,12 +146,23 @@ export class ChannelNavigationController {
     return this.state.unreadByChannel[channelId] ?? 0
   }
 
+  totalUnread(): number {
+    return Object.values(this.state.unreadByChannel).reduce((sum, count) => sum + count, 0)
+  }
+
+  markRead(channelId: string): void {
+    if (this.unreadCount(channelId) === 0) return
+    delete this.state.unreadByChannel[channelId]
+    this.persist()
+    this.notifyListeners()
+  }
+
   setViewedChannel(channelId: string | null): void {
     this.viewedChannelId = channelId
     if (!channelId || this.unreadCount(channelId) === 0) return
     delete this.state.unreadByChannel[channelId]
     this.persist()
-    this.refreshSidebar(channelId)
+    this.notifyListeners()
   }
 
   processEvents(frames: EventFrame[]): void {
@@ -155,7 +179,7 @@ export class ChannelNavigationController {
         this.registrations.has(frame.channelId)
       ) {
         this.state.unreadByChannel[frame.channelId] = this.unreadCount(frame.channelId) + 1
-        this.refreshSidebar(frame.channelId)
+        this.notifyListeners()
       }
     }
     this.persist()
@@ -173,65 +197,36 @@ export class ChannelNavigationController {
     this.pendingFrames = []
     for (const registration of this.registrations.values()) {
       registration.routeDispose()
-      registration.sidebarDispose()
     }
     this.registrations.clear()
+    this.listeners.clear()
   }
 
-  private registerChannel(channel: CrewChannel, index: number): void {
+  private registerChannel(channel: CrewChannel): void {
     const existing = this.registrations.get(channel.id)
-    const order = CHANNEL_ORDER_START + index
-    if (existing && existing.channel.name === channel.name && existing.order === order) {
+    if (existing) {
+      existing.channel = channel
       return
     }
-
-    const routeDispose = existing?.routeDispose ?? this.options.register({
-      id: `channel-route-${channel.id}`,
-      area: ROUTES_AREA,
-      data: { path: channelPath(channel.id) } satisfies RouteContribution,
-      render: () => this.options.renderChannel(channel.id),
-    })
-
-    existing?.sidebarDispose()
-    let sidebarDispose: () => void
-    try {
-      sidebarDispose = this.registerSidebar(channel, order)
-    } catch (error) {
-      if (!existing) routeDispose()
-      throw error
-    }
-
     this.registrations.set(channel.id, {
       channel,
-      order,
-      routeDispose,
-      sidebarDispose,
+      routeDispose: this.options.register({
+        id: `channel-route-${channel.id}`,
+        area: ROUTES_AREA,
+        data: { path: channelPath(channel.id) } satisfies RouteContribution,
+        render: () => this.options.renderChannel(channel.id),
+      }),
     })
   }
 
-  private refreshSidebar(channelId: string): void {
-    const existing = this.registrations.get(channelId)
-    if (!existing || this.disposed) return
-    existing.sidebarDispose()
-    try {
-      existing.sidebarDispose = this.registerSidebar(existing.channel, existing.order)
-    } catch {
-      // A future reconciliation retries the contribution.
+  private notifyListeners(): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener()
+      } catch {
+        // A broken pane listener must not take channel tracking down with it.
+      }
     }
-  }
-
-  private registerSidebar(channel: CrewChannel, order: number): () => void {
-    return this.options.register({
-      id: `channel-nav-${channel.id}`,
-      area: SIDEBAR_NAV_AREA,
-      order,
-      data: {
-        // The hash glyph — sidebar channels read like Slack: ⌗ general
-        codicon: 'symbol-numeric',
-        label: channelLabel(channel.name, this.unreadCount(channel.id)),
-        path: channelPath(channel.id),
-      } satisfies SidebarNavContribution,
-    })
   }
 
   private persist(): void {

@@ -164,12 +164,25 @@ describe('MemberRoster', () => {
         members: { atlas: { ...atlasFixture(), displayName: 'Seliel', role: 'Engineer' } },
         me: { displayName: 'You', avatar: null, color: null },
       }}>
-        <MemberRoster activeProfileIds={['atlas']} profiles={rosterProfiles()} />
+        <MemberRoster
+          activeProfileIds={['atlas']}
+          api={{
+            listChannelMembers: async () => [{ profileId: 'atlas', activationPolicy: 'always' }],
+            updateChannelMember: async () => ({ profileId: 'atlas', activationPolicy: 'always' }),
+            removeChannelMember: async () => ({ ok: true }),
+          } as never}
+          channel={{
+            id: 'chan-1', name: 'general', purpose: '', topic: '',
+            defaultResponderProfile: 'atlas', defaultProject: null,
+            allowedProjects: [], routingRules: {}, createdAt: 1, updatedAt: 1,
+          }}
+          profiles={rosterProfiles()}
+        />
       </PresentationContext.Provider>,
     )
 
-    expect(screen.getByText('Seliel')).not.toBeNull()
-    expect(screen.getByText('Working now')).not.toBeNull()
+    expect(await screen.findByText('Seliel')).not.toBeNull()
+    expect(await screen.findByText('Working now')).not.toBeNull()
     expect(screen.queryByText(/claude-sonnet-5|anthropic/)).toBeNull()
   })
 })

@@ -75,10 +75,10 @@ describe('Crew Studio', () => {
     expect(await screen.findByText('Saved')).not.toBeNull()
   })
 
-  it('restores focus to New agent when the create dialog closes', async () => {
+  it('restores focus to New bot when the create dialog closes', async () => {
     const { api } = fixture()
     render(<StudioView api={api} />)
-    const trigger = await screen.findByRole('button', { name: 'New agent' })
+    const trigger = await screen.findByRole('button', { name: 'New bot' })
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(document.activeElement).toBe(trigger)
@@ -126,7 +126,7 @@ describe('Crew Studio', () => {
   it('renders the approved four-zone Studio shell', async () => {
     const { api } = fixture()
     render(<StudioView api={api} />)
-    expect(await screen.findByRole('navigation', { name: 'Agents' })).not.toBeNull()
+    expect(await screen.findByRole('navigation', { name: 'Bots' })).not.toBeNull()
     expect(screen.getByRole('navigation', { name: 'Agent settings' })).not.toBeNull()
     expect(await screen.findByRole('region', { name: 'Identity editor' })).not.toBeNull()
     expect(await screen.findByRole('complementary', { name: 'Atlas at a glance' })).not.toBeNull()
@@ -135,9 +135,9 @@ describe('Crew Studio', () => {
   it('filters agents without losing the selected editor', async () => {
     const { api } = fixture()
     render(<StudioView api={api} />)
-    await screen.findByRole('navigation', { name: 'Agents' })
+    await screen.findByRole('navigation', { name: 'Bots' })
     await screen.findByRole('region', { name: 'Identity editor' })
-    fireEvent.change(screen.getByLabelText('Search agents'), { target: { value: 'scout' } })
+    fireEvent.change(screen.getByLabelText('Search bots'), { target: { value: 'scout' } })
     expect(screen.getByRole('button', { name: /scout/i })).not.toBeNull()
     expect(screen.queryByRole('button', { name: /atlas/i })).toBeNull()
     expect(screen.getByRole('region', { name: 'Identity editor' })).not.toBeNull()
@@ -159,7 +159,7 @@ describe('Crew Studio', () => {
     const { api, createProfile } = fixture()
     createProfile.mockRejectedValueOnce(new Error('Profile already exists'))
     render(<StudioView api={api} />)
-    fireEvent.click(await screen.findByRole('button', { name: 'New agent' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'New bot' }))
     fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'critic' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
     expect(await screen.findByRole('alert')).not.toBeNull()
@@ -178,7 +178,7 @@ describe('Crew Studio', () => {
     const { api, createProfile } = fixture()
     render(<StudioView api={api} />)
     await screen.findByRole('button', { name: /atlas/i })
-    fireEvent.click(screen.getByRole('button', { name: 'New agent' }))
+    fireEvent.click(screen.getByRole('button', { name: 'New bot' }))
     const dialog = screen.getByRole('dialog', { name: 'Create Hermes profile' })
     fireEvent.change(within(dialog).getByLabelText('Profile name'), { target: { value: 'critic' } })
     fireEvent.click(within(dialog).getByLabelText('Start without skills'))
@@ -222,6 +222,18 @@ describe('Crew Studio', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save behavior' }))
     await waitFor(() => expect(calls.updateChannelMember).toHaveBeenCalledWith('channel-1', 'atlas', 'mentioned'))
     expect(calls.updateClassifier).toHaveBeenCalledWith('channel-1', expect.objectContaining({ enabled: false }))
+  })
+
+  it('does not enroll a non-member when saving behavior', async () => {
+    const calls = fixture()
+    vi.mocked(calls.api.listChannelMembers).mockResolvedValue([])
+    render(<StudioView api={calls.api} />)
+    await screen.findByRole('region', { name: 'Identity editor' })
+    fireEvent.click(screen.getByRole('button', { name: 'Behavior' }))
+    expect(await screen.findByText('Not a member of this channel')).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Save behavior' }))
+    await waitFor(() => expect(calls.updateClassifier).toHaveBeenCalled())
+    expect(calls.updateChannelMember).not.toHaveBeenCalled()
   })
 
   it('keeps Scout on Gemini and narrows its channel project access independently', async () => {
@@ -292,80 +304,5 @@ describe('Crew Studio', () => {
     render(<StudioView api={calls.api} readiness={async () => ({ ready: false, reason: 'Provider is not configured', source: 'runtime_check', checksDisagree: false })} />)
     expect(await screen.findByText('Provider is not configured')).not.toBeNull()
     expect(screen.queryByText(/sk-[A-Za-z0-9]/)).toBeNull()
-  })
-})
-
-describe('Steward settings', () => {
-  it('opens from the Automation rail entry and saves the toggle', async () => {
-    const calls = fixture()
-    const getSteward = vi.fn(async () => ({ enabled: false, intervalMinutes: 5, stallMinutes: 5, provider: null, model: null }))
-    const updateSteward = vi.fn(async (body: Record<string, unknown>) => ({ enabled: true, intervalMinutes: 5, stallMinutes: 5, provider: null, model: null, ...body }))
-    const runStewardSweep = vi.fn(async () => ({ replanned: [], retried: [], judged: [] }))
-    Object.assign(calls.api as unknown as Record<string, unknown>, { getSteward, updateSteward, runStewardSweep })
-    render(<StudioView api={calls.api} readiness={async () => ({ ready: true, reason: null, source: 'fallback' as const, checksDisagree: false })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: /Steward/ }))
-    await screen.findByRole('region', { name: 'Steward settings' })
-
-    fireEvent.click(screen.getByRole('checkbox'))
-    await waitFor(() => expect(updateSteward).toHaveBeenCalledWith({ enabled: true }))
-
-    fireEvent.click(screen.getByRole('button', { name: 'Run sweep now' }))
-    await waitFor(() => expect(runStewardSweep).toHaveBeenCalled())
-    expect(await screen.findByText(/nothing was stuck/)).not.toBeNull()
-  })
-})
-
-describe('Routing limits', () => {
-  it('opens from the Automation rail, saves defaults and channel overrides', async () => {
-    const calls = fixture()
-    const getRoutingDefaults = vi.fn(async () => ({ max_automated_turns: 6, max_depth: 2, max_pair_repeats: 1, max_concurrency: 4 }))
-    const updateRoutingDefaults = vi.fn(async (body: Record<string, unknown>) => ({ max_automated_turns: 6, max_depth: 2, max_pair_repeats: 1, max_concurrency: 4, ...body }))
-    Object.assign(calls.api as unknown as Record<string, unknown>, { getRoutingDefaults, updateRoutingDefaults })
-    render(<StudioView api={calls.api} readiness={async () => ({ ready: true, reason: null, source: 'fallback' as const, checksDisagree: false })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: /Limits/ }))
-    const pane = await screen.findByRole('region', { name: 'Routing limits' })
-
-    const budgetInputs = within(pane).getAllByLabelText(/Automation budget/)
-    fireEvent.change(budgetInputs[0], { target: { value: '12' } })
-    await waitFor(() => expect(updateRoutingDefaults).toHaveBeenCalledWith({ max_automated_turns: 12 }))
-
-    // Channel override card saves through patchChannel.
-    fireEvent.change(budgetInputs[1], { target: { value: '20' } })
-    fireEvent.click(within(pane).getByRole('button', { name: 'Save overrides' }))
-    await waitFor(() => expect(calls.patchChannel).toHaveBeenCalledWith(
-      'channel-1',
-      { routingRules: expect.objectContaining({ max_automated_turns: 20 }) },
-    ))
-  })
-})
-
-describe('Schedules', () => {
-  it('creates a cron-backed schedule with mentions parsed from the message', async () => {
-    const calls = fixture()
-    const listSchedules = vi.fn(async () => [])
-    const createSchedule = vi.fn(async (body: Record<string, unknown>) => ({
-      id: 'job001', name: String(body.name), schedule: String(body.schedule), enabled: true,
-      state: 'scheduled', nextRunAt: 1, lastRunAt: null, lastStatus: null,
-      channelId: String(body.channelId), content: String(body.content), mentions: body.mentions as string[],
-    }))
-    Object.assign(calls.api as unknown as Record<string, unknown>, { listSchedules, createSchedule })
-    render(<StudioView api={calls.api} readiness={async () => ({ ready: true, reason: null, source: 'fallback' as const, checksDisagree: false })} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: /Schedules/ }))
-    const pane = await screen.findByRole('region', { name: 'Schedules' })
-
-    fireEvent.change(within(pane).getByLabelText('Name'), { target: { value: 'Standup' } })
-    fireEvent.change(within(pane).getByLabelText(/^Message/), { target: { value: '@atlas kick off the standup' } })
-    fireEvent.click(within(pane).getByRole('button', { name: 'Create schedule' }))
-
-    await waitFor(() => expect(createSchedule).toHaveBeenCalledWith({
-      name: 'Standup',
-      schedule: '0 9 * * 1-5',
-      channelId: 'channel-1',
-      content: '@atlas kick off the standup',
-      mentions: ['atlas'],
-    }))
   })
 })

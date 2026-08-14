@@ -1,12 +1,12 @@
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.repositories import CrewRepository
-from hermes_crew_backend.routing import Router
-from hermes_crew_backend.scheduler import Scheduler
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.routing import Router
+from hermes_channels_backend.scheduler import Scheduler
 
 
 def test_restart_marks_orphaned_running_turn_interrupted(tmp_path):
     """Crew must never silently replay work whose Desktop runtime disappeared."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "build it")
@@ -25,7 +25,7 @@ def test_restart_marks_orphaned_running_turn_interrupted(tmp_path):
 
 def test_restart_keeps_a_confirmed_runtime_running(tmp_path):
     """A runtime confirmed by Hermes must not be interrupted during recovery."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "build it")
@@ -41,10 +41,10 @@ def test_restart_keeps_a_confirmed_runtime_running(tmp_path):
 
 
 def test_second_host_boot_leaves_live_turns_alone(tmp_path):
-    """Both hosts share crew.db: a booting backend must not interrupt a turn
+    """Both hosts share channels.db: a booting backend must not interrupt a turn
     another host's worker is actively driving (regression: it blanket-reaped
     everything in flight, killing cross-host relays mid-run)."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "build it")
@@ -66,7 +66,7 @@ def test_heartbeat_keeps_silent_turn_alive_and_reap_still_catches_dead_ones(tmp_
     import sqlite3 as _sqlite3
     import time as _time
 
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "think hard")
@@ -76,7 +76,7 @@ def test_heartbeat_keeps_silent_turn_alive_and_reap_still_catches_dead_ones(tmp_
 
     # Backdate all journal traces past the stale window.
     stale = int(_time.time() * 1000) - 30 * 60 * 1000
-    with _sqlite3.connect(tmp_path / "crew.db") as connection:
+    with _sqlite3.connect(tmp_path / "channels.db") as connection:
         connection.execute("UPDATE turns SET updated_at = ?", (stale,))
         connection.execute("UPDATE activity_events SET created_at = ?", (stale,))
 
@@ -86,7 +86,7 @@ def test_heartbeat_keeps_silent_turn_alive_and_reap_still_catches_dead_ones(tmp_
     assert scheduler.get(turn.id).state == "claimed"
 
     # Silence again -> reaped.
-    with _sqlite3.connect(tmp_path / "crew.db") as connection:
+    with _sqlite3.connect(tmp_path / "channels.db") as connection:
         connection.execute("UPDATE turns SET updated_at = ?", (stale,))
     assert scheduler.reconcile_startup(set()) == [turn.id]
     assert scheduler.get(turn.id).state == "interrupted"

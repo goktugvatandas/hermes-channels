@@ -5,18 +5,18 @@ import {
   type PaletteContribution,
   ROUTES_AREA,
   type RouteContribution,
-  SIDEBAR_NAV_AREA,
-  type SidebarNavContribution,
 } from '@hermes/plugin-sdk'
 
-import desktopStyles from 'virtual:crew-desktop-css'
+import desktopStyles from 'virtual:channels-desktop-css'
 
 import { CrewApi } from './api'
 import { ChannelNavigationController, channelPath } from './channel-navigation'
+import { CrewPane, PaneUnreadDot } from './components/crew-pane'
 import { GatewayWorker } from './gateway-worker'
+import { installAetherTheme } from './aether-theme'
 import { CrewPage, type CrewView } from './views/crew-page'
 
-const STYLE_ELEMENT_ID = 'hermes-crew-desktop-styles'
+const STYLE_ELEMENT_ID = 'hermes-channels-desktop-styles'
 
 function injectStyles(onDispose: (cleanup: () => void) => void): void {
   if (typeof document === 'undefined') return
@@ -29,16 +29,17 @@ function injectStyles(onDispose: (cleanup: () => void) => void): void {
 }
 
 const plugin: HermesPlugin = {
-  id: 'hermes-crew',
-  name: 'Hermes Crew',
-  description: 'Persistent Hermes profiles working together in local channels.',
+  id: 'hermes-channels',
+  name: 'Hermes Channels',
+  description: 'Slack-style channels where persistent Hermes bots work together.',
   defaultEnabled: false,
   register(ctx) {
     injectStyles(ctx.onDispose)
+    installAetherTheme()
     const api = new CrewApi(ctx.rest)
     let navigation!: ChannelNavigationController
-    const renderCrewPage = (initialChannelId?: string, initialView?: CrewView) => (
-      <div className="hermes-crew-desktop">
+    const renderChannelsPage = (initialChannelId?: string, initialView?: CrewView) => (
+      <div className="hermes-channels-desktop">
         <CrewPage
           api={api}
           initialChannelId={initialChannelId}
@@ -46,7 +47,14 @@ const plugin: HermesPlugin = {
           onChannelCreated={(channel) => navigation.upsertChannel(channel)}
           onChannelViewed={(channelId) => navigation.setViewedChannel(channelId)}
           onNavigateChannel={(channelId) => host.navigate(
-            channelId ? channelPath(channelId) : '/crew',
+            channelId ? channelPath(channelId) : '/channels',
+          )}
+          onNavigateView={(view) => host.navigate(
+            view === 'home' ? '/channels'
+              : view === 'workshop' ? '/channels/bot-management'
+                : view === 'profile' ? '/channels/profile'
+                  : view === 'search' ? '/channels/search'
+                    : '/channels/settings',
           )}
         />
       </div>
@@ -57,54 +65,51 @@ const plugin: HermesPlugin = {
       {
         id: 'page',
         area: ROUTES_AREA,
-        data: { path: '/crew' } satisfies RouteContribution,
-        render: () => renderCrewPage(),
+        data: { path: '/channels' } satisfies RouteContribution,
+        render: () => renderChannelsPage(),
       },
       {
-        id: 'nav',
-        area: SIDEBAR_NAV_AREA,
-        order: 55,
-        data: {
-          codicon: 'organization',
-          label: 'Crew',
-          path: '/crew',
-        } satisfies SidebarNavContribution,
-      },
-      {
-        id: 'workshop-page',
+        id: 'bot-management-page',
         area: ROUTES_AREA,
-        data: { path: '/crew/agent-lab' } satisfies RouteContribution,
-        render: () => renderCrewPage(undefined, 'workshop'),
+        data: { path: '/channels/bot-management' } satisfies RouteContribution,
+        render: () => renderChannelsPage(undefined, 'workshop'),
       },
       {
-        id: 'workshop-nav',
-        area: SIDEBAR_NAV_AREA,
-        // Below the dynamic channel entries (which start at 56).
-        order: 400,
-        data: {
-          codicon: 'beaker',
-          label: 'Agent Lab',
-          path: '/crew/agent-lab',
-        } satisfies SidebarNavContribution,
+        id: 'profile-page',
+        area: ROUTES_AREA,
+        data: { path: '/channels/profile' } satisfies RouteContribution,
+        render: () => renderChannelsPage(undefined, 'profile'),
+      },
+      {
+        id: 'settings-page',
+        area: ROUTES_AREA,
+        data: { path: '/channels/settings' } satisfies RouteContribution,
+        render: () => renderChannelsPage(undefined, 'settings'),
+      },
+      {
+        id: 'search-page',
+        area: ROUTES_AREA,
+        data: { path: '/channels/search' } satisfies RouteContribution,
+        render: () => renderChannelsPage(undefined, 'search'),
       },
       {
         id: 'open',
         area: PALETTE_AREA,
         data: {
-          id: 'hermes-crew.open',
-          label: 'Open Hermes Crew',
-          keywords: ['crew', 'agents', 'channels', 'team'],
-          run: () => host.navigate('/crew'),
+          id: 'hermes-channels.open',
+          label: 'Open Hermes Channels',
+          keywords: ['channels', 'bots', 'team', 'chat'],
+          run: () => host.navigate('/channels'),
         } satisfies PaletteContribution,
       },
       {
-        id: 'open-workshop',
+        id: 'open-bot-management',
         area: PALETTE_AREA,
         data: {
-          id: 'hermes-crew.open-workshop',
-          label: 'Open Agent Lab',
-          keywords: ['crew', 'lab', 'workshop', 'agents', 'profiles', 'soul'],
-          run: () => host.navigate('/crew/agent-lab'),
+          id: 'hermes-channels.open-bot-management',
+          label: 'Open Bot Management',
+          keywords: ['channels', 'bots', 'profiles', 'soul', 'automation'],
+          run: () => host.navigate('/channels/bot-management'),
         } satisfies PaletteContribution,
       },
     ])
@@ -112,10 +117,31 @@ const plugin: HermesPlugin = {
     navigation = new ChannelNavigationController({
       api,
       register: ctx.register,
-      renderChannel: (channelId) => renderCrewPage(channelId),
+      renderChannel: (channelId) => renderChannelsPage(channelId),
       socket: ctx.socket,
       storage: ctx.storage,
     })
+
+    // The CHANNELS tab: a left pane beside SESSIONS (and BOTS), the same
+    // mechanism Bot Mode uses. This is the plugin's one navigation surface.
+    ctx.register({
+      id: 'pane',
+      area: 'panes',
+      title: 'Channels',
+      data: {
+        placement: 'left',
+        width: '280px',
+        collapsible: true,
+        // Live unread dot on the CHANNELS tab itself.
+        tabLead: () => <PaneUnreadDot controller={navigation} />,
+      },
+      render: () => (
+        <div className="hermes-channels-desktop h-full min-h-0">
+          <CrewPane api={api} controller={navigation} />
+        </div>
+      ),
+    })
+
     ctx.onDispose(navigation.start())
   },
 }

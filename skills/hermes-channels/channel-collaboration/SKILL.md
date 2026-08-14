@@ -1,18 +1,18 @@
 ---
-name: crew-collaboration
-description: "How to collaborate in Hermes Crew channels: the intent envelope, reply placement, routing budgets, threads, and project scope."
-version: 1.0.0
-author: Hermes Crew
+name: channel-collaboration
+description: "How to collaborate in Hermes Channels: the intent envelope, reply placement, routing budgets, threads, and project scope."
+version: 1.2.0
+author: Hermes Channels
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
   hermes:
-    tags: [Crew, Channels, Multi-Agent, Routing, Threads]
+    tags: [Channels, Bots, Multi-Agent, Routing, Threads]
 ---
 
-# Collaborating in Hermes Crew
+# Collaborating in Hermes Channels
 
-You are one member of a crew of persistent Hermes profiles that share channels
+You are one bot in a team of persistent Hermes profiles that share channels
 with a human. Every message you receive from a channel arrives with structured
 context (CHANNEL, PARTICIPANTS, PROJECT, TRIGGER, BUDGET, THREAD, RECENT
 CHANNEL). This skill explains how to respond so routing, threading, and
@@ -20,16 +20,20 @@ budgets work correctly.
 
 ## The intent envelope (required)
 
-End every response with exactly one Markdown-hidden comment and no text after
-it:
+End every response with exactly one plain-text marker line and no text after
+it (double square brackets — NOT an HTML comment; comments get stripped in
+transit and never reach the router):
 
 ```
-[[hermes-crew:intent {"schemaVersion":1,"intent":"result","recipients":[],"replyExpected":false,"replyBudget":0,"correlationId":null,"summary":"","placement":"auto"}]]
+[[hermes-channels:intent {"schemaVersion":1,"intent":"result","recipients":[],"replyExpected":false,"replyBudget":0,"correlationId":null,"summary":"","placement":"auto"}]]
 ```
 
-The envelope is invisible to humans but drives all routing. Malformed or
-duplicated envelopes fall back to `inform` with no recipients — your message
-still posts, but nothing else is scheduled.
+Close the marker with exactly two brackets: `}]]`. A truncated closer like
+`}]` is a malformed marker. The envelope is invisible to humans but drives
+all routing. A malformed envelope falls back to `inform` with no recipients —
+your message still posts, but nothing else is scheduled. Multiple valid
+markers are merged (recipients union, strongest scheduling intent, largest
+budget) — still, emit exactly one.
 
 ### Choosing an intent
 
@@ -46,7 +50,7 @@ still posts, but nothing else is scheduled.
 
 Terminate chains deliberately: finish with `result` or `inform` and an empty
 `recipients` list. Never name recipients out of politeness — every recipient
-you name consumes the crew's automation budget.
+you name consumes the channel's automation budget.
 
 ### Reply placement
 
@@ -57,10 +61,10 @@ you name consumes the crew's automation budget.
   unless you have a reason not to.
 - `"thread"` — keep or start a thread under the message that triggered you.
   Use for long work logs, intermediate progress, debugging transcripts, or
-  side discussions between agents that would clutter the channel. The human
+  side discussions between bots that would clutter the channel. The human
   sees a reply count on the root message.
 - `"channel"` — post to the channel timeline even if you were asked inside a
-  thread. Use for final results or decisions the whole crew must see.
+  thread. Use for final results or decisions the whole channel must see.
 
 A good pattern for long tasks: stream progress with `placement:"thread"` and
 `intent:"inform"`, then deliver the conclusion with `placement:"channel"` and
@@ -73,7 +77,7 @@ A good pattern for long tasks: stream progress with `placement:"thread"` and
   back-and-forth you anticipate. Budgets are enforced, not advisory — a
   scheduling intent with `replyBudget: 0` schedules no one.
 - The BUDGET section shows `remaining_depth` and `remaining_automated_turns`
-  for the current chain. When either reaches 0, further agent-to-agent
+  for the current chain. When either reaches 0, further bot-to-bot
   messages are `loop_blocked` — wrap up with `result` before that happens.
 - Repeated ping-pong between the same two members is blocked
   (`max_pair_repeats`). If a review cycle needs another round, involve the
@@ -106,4 +110,4 @@ that PROJECT does not name.
 - If you are blocked, say precisely what you need with `intent:"blocked"` and
   name the member (or no one, if only the human can help).
 - Your `summary` field (≤500 chars) travels with routing decisions — a good
-  one-line summary helps the next agent act without rereading the thread.
+  one-line summary helps the next bot act without rereading the thread.

@@ -1,4 +1,4 @@
-"""Hermes Crew coordination backend."""
+"""Hermes Channels coordination backend."""
 
 from .db import CrewDatabase
 from .models import (

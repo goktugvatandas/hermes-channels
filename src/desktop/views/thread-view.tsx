@@ -12,12 +12,13 @@ interface ThreadViewProps {
   channelId: string
   root: CrewMessage
   profiles: HermesProfile[]
+  membershipRevision?: number
   events?: EventFrame[]
   onClose(): void
   returnFocusRef: RefObject<HTMLElement | null>
 }
 
-const THREAD_WIDTH_KEY = 'hermes-crew:thread-width'
+const THREAD_WIDTH_KEY = 'hermes-channels:thread-width'
 const MIN_THREAD_WIDTH = 280
 const MAX_THREAD_WIDTH = 640
 
@@ -31,11 +32,24 @@ function storedThreadWidth(): number {
   return 320
 }
 
-export function ThreadView({ api, channelId, root, profiles, events = [], onClose, returnFocusRef }: ThreadViewProps) {
+export function ThreadView({ api, channelId, root, profiles, membershipRevision = 0, events = [], onClose, returnFocusRef }: ThreadViewProps) {
   const [messages, setMessages] = useState<CrewMessage[]>([root])
   const [pendingTurnIds, setPendingTurnIds] = useState<string[]>([])
   const [width, setWidth] = useState(storedThreadWidth)
   const headingRef = useRef<HTMLHeadingElement>(null)
+  const [memberIds, setMemberIds] = useState<string[]>([])
+
+  useEffect(() => {
+    let current = true
+    void api.listChannelMembers(channelId)
+      .then((members) => { if (current) setMemberIds(members.map((member) => member.profileId)) })
+      .catch(() => undefined)
+    return () => { current = false }
+  }, [api, channelId, membershipRevision])
+  const channelProfiles = useMemo(
+    () => profiles.filter((profile) => memberIds.includes(profile.name)),
+    [memberIds, profiles],
+  )
 
   function startResize(event: ReactPointerEvent<HTMLDivElement>) {
     event.preventDefault()
@@ -129,7 +143,7 @@ export function ThreadView({ api, channelId, root, profiles, events = [], onClos
           setMessages((current) => [...current.filter((message) => message.id !== receipt.message.id), receipt.message])
           setPendingTurnIds((current) => [...new Set([...current, ...receipt.turnIds])])
         }}
-        profiles={profiles}
+        profiles={channelProfiles}
         rootMessageId={root.id}
       />
     </aside>

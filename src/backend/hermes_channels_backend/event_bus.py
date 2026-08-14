@@ -1,4 +1,4 @@
-"""In-process acceleration for the durable Crew activity journal."""
+"""In-process acceleration for the durable Channels activity journal."""
 
 from asyncio import Queue
 from dataclasses import dataclass

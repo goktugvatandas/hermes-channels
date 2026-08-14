@@ -34,9 +34,18 @@ interface MessageListProps {
 export function MessageList({ messages, pendingTurns = [], profiles = [], loading = false, deliveryById = {}, onReply, onRetry, initialScrollTop = -1, onScrollTop, thread = false, turnByMessageId }: MessageListProps) {
   const listRef = useRef<HTMLOListElement>(null)
   const stickToBottom = useRef(initialScrollTop < 0)
+  // Restore runs ONCE per mount. The live scroll position feeds back into
+  // initialScrollTop via the ui-state snapshot, so re-applying it on every
+  // prop change writes a stale offset back mid-scroll — the list keeps
+  // yanking itself toward the bottom while the user scrolls up.
+  const restored = useRef(false)
   useLayoutEffect(() => {
     const list = listRef.current
-    if (!list) return
+    if (!list || restored.current) return
+    // A saved offset needs content to restore against; against an empty list
+    // it clamps to 0 and re-arms stick-to-bottom.
+    if (initialScrollTop >= 0 && messages.length === 0) return
+    restored.current = true
     list.scrollTop = initialScrollTop < 0 ? list.scrollHeight : initialScrollTop
     // A restored offset that already sits at the bottom keeps following new
     // messages; only a genuine scrolled-up position opts out. (Guard on a
@@ -44,7 +53,7 @@ export function MessageList({ messages, pendingTurns = [], profiles = [], loadin
     if (list.scrollHeight > 0) {
       stickToBottom.current = list.scrollHeight - list.scrollTop - list.clientHeight < 48
     }
-  }, [initialScrollTop])
+  }, [initialScrollTop, messages])
   useLayoutEffect(() => {
     const list = listRef.current
     if (list && stickToBottom.current) list.scrollTop = list.scrollHeight

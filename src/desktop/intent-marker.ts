@@ -6,8 +6,13 @@ import type { IntentEnvelope, MessageIntent } from './types'
 // handoff silently downgraded to the default. The comment form stays
 // parseable for older content. Both are tolerant of whitespace and
 // pretty-printed JSON.
-const EXACT_MARKER = /(?:<!--|\[\[)\s*hermes-crew:intent\s+(\{[\s\S]*?\})\s*(?:-->|\]\])/g
-const ANY_MARKER = /(?:<!--\s*hermes-crew:intent\b[^\r\n]*?-->|\[\[\s*hermes-crew:intent\b[^\r\n]*?\]\])/g
+// hermes-crew is the pre-rename marker name; accepted during migration.
+const EXACT_MARKER = /(?:<!--|\[\[)\s*hermes-(?:channels|crew):intent\s+(\{[\s\S]*?\})\s*(?:-->|\]\])/g
+const ANY_MARKER = /(?:<!--\s*hermes-(?:channels|crew):intent\b[^\r\n]*?-->|\[\[\s*hermes-(?:channels|crew):intent\b[^\r\n]*?\]\])/g
+// Models sometimes truncate the closer (`}]` instead of `}]]`). The contract
+// puts markers on their own line, so a line that OPENS like a marker is a
+// marker for display purposes even when the closer is malformed.
+const SLOPPY_MARKER_LINE = /^[ \t]*(?:<!--|\[\[)\s*hermes-(?:channels|crew):intent\b[^\r\n]*$/gm
 const MAX_PAYLOAD_BYTES = 4096
 const INTENTS = new Set<MessageIntent>([
   'inform',
@@ -134,9 +139,15 @@ function mergeEnvelopes(envelopes: IntentEnvelope[]): IntentEnvelope {
   }
 }
 
-/** Remove hidden crew intent markers from displayable text. */
+/** Remove hidden intent markers from displayable text. */
 export function stripIntentMarkers(text: string): string {
-  return text.replace(ANY_MARKER, '').trim()
+  // Exact matches first — the exact form may span multiple lines
+  // (pretty-printed JSON); ANY and the sloppy-line pass are line-bound.
+  return text
+    .replace(EXACT_MARKER, '')
+    .replace(ANY_MARKER, '')
+    .replace(SLOPPY_MARKER_LINE, '')
+    .trim()
 }
 
 export function hasIntentMarker(text: string): boolean {
@@ -148,7 +159,11 @@ export function parseIntentMarker(text: string): {
   visibleText: string
   envelope: IntentEnvelope
 } {
-  const visibleText = text.replace(ANY_MARKER, '').trim()
+  const visibleText = text
+    .replace(EXACT_MARKER, '')
+    .replace(ANY_MARKER, '')
+    .replace(SLOPPY_MARKER_LINE, '')
+    .trim()
   const envelopes: IntentEnvelope[] = []
   for (const match of text.matchAll(EXACT_MARKER)) {
     const payload = match[1]

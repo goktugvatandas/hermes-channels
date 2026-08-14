@@ -47,7 +47,7 @@ def _load_bindings() -> SimpleNamespace:
 
 
 class HermesAdapter:
-    """Expose only the Hermes-owned state Hermes Crew is allowed to manage."""
+    """Expose only the Hermes-owned state Hermes Channels is allowed to manage."""
 
     def __init__(self, bindings: Any | None = None):
         self._bindings = bindings

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_crew_backend.hermes_adapter import HermesAdapter
+from hermes_channels_backend.hermes_adapter import HermesAdapter
 
 
 @dataclass

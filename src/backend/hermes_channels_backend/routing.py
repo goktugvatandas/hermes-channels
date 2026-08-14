@@ -46,6 +46,45 @@ class RoutingDecision:
     created_at: int
 
 
+def scan_mentions(
+    repository: CrewRepository,
+    channel_id: str,
+    content: str,
+    *,
+    exclude_profile: str | None = None,
+) -> list[str]:
+    """The one @-mention grammar (shared by the router's fallback and every
+    platform entry point). ``@all`` fans out to the whole channel; handles are
+    profile ids plus display names stripped to word characters, matched with
+    the same boundary rules the composer highlights."""
+
+    text = (content or "").lower()
+    members = [
+        member
+        for member in repository.list_members(channel_id)
+        if member.activation_policy != "disabled"
+        and member.profile_id != exclude_profile
+    ]
+    if re.search(r"(^|[\s([{])@all(?![\w-])", text):
+        return sorted(member.profile_id for member in members)
+    hits: list[str] = []
+    for member in members:
+        handles = {member.profile_id.lower()}
+        try:
+            display = repository.get_member_presentation(member.profile_id).display_name
+            handle = re.sub(r"[^\w-]", "", display or "")
+            if handle:
+                handles.add(handle.lower())
+        except Exception:
+            pass
+        if any(
+            re.search(rf"(^|[\s([{{])@{re.escape(handle)}(?![\w-])", text)
+            for handle in handles
+        ):
+            hits.append(member.profile_id)
+    return sorted(hits)
+
+
 class Router:
     def __init__(self, repository: CrewRepository):
         self.repository = repository
@@ -54,8 +93,6 @@ class Router:
         self,
         message_id: str,
         classifier_suggestion: ClassificationSuggestion | None = None,
-        *,
-        extra_candidates: list[tuple[str, tuple[str, ...]]] | None = None,
     ) -> list[PlannedTurn]:
         message = self.repository.require_message(message_id)
         channel = self.repository.require_channel(message.channel_id)
@@ -82,19 +119,6 @@ class Router:
             depth = 0
             prior = []
             tree_count = 0
-
-        if extra_candidates:
-            # Steward judgments and similar injected wakes: still deduped and
-            # still subject to every cap in the loop below.
-            present = {profile_id for profile_id, _ in candidates}
-            for profile_id, triggers in extra_candidates:
-                member = members.get(profile_id)
-                if member is None or member.activation_policy == "disabled":
-                    continue
-                if profile_id in present:
-                    continue
-                candidates.append((profile_id, triggers))
-                present.add(profile_id)
 
         if not candidates:
             self._record(message, None, "no_reply", ())
@@ -196,15 +220,19 @@ class Router:
             if member is not None and member.activation_policy != "disabled":
                 self._add_candidate(ordered, mentioned, "mention")
 
-        default_member = members.get(default_profile) if default_profile else None
-        if default_member is not None and default_member.activation_policy not in {
-            "observer",
-            "disabled",
-        }:
-            self._add_candidate(ordered, default_member.profile_id, "default")
-        for member in members.values():
-            if member.activation_policy == "always":
-                self._add_candidate(ordered, member.profile_id, "always")
+        # A message that names someone is directed: only the mentioned
+        # members answer. The default responder and always-on members cover
+        # untagged messages, not conversations addressed to somebody else.
+        if not message.mentions:
+            default_member = members.get(default_profile) if default_profile else None
+            if default_member is not None and default_member.activation_policy not in {
+                "observer",
+                "disabled",
+            }:
+                self._add_candidate(ordered, default_member.profile_id, "default")
+            for member in members.values():
+                if member.activation_policy == "always":
+                    self._add_candidate(ordered, member.profile_id, "always")
         if classifier_suggestion is not None:
             for profile_id in classifier_suggestion.recipients:
                 member = members.get(profile_id)
@@ -247,24 +275,13 @@ class Router:
         # those caps exist for. Terminal intents stay silent.
         if envelope.intent in {"result", "blocked", "approval_request"}:
             return []
-        text = (message.content or "").lower()
-        for profile_id, member in members.items():
-            if member.activation_policy == "disabled":
-                continue
-            if profile_id == message.author_profile_id:
-                continue
-            handles = {profile_id.lower()}
-            try:
-                display = self.repository.get_member_presentation(profile_id).display_name
-                handle = re.sub(r"[^\w-]", "", display or "")
-                if handle:
-                    handles.add(handle.lower())
-            except Exception:
-                pass
-            if any(
-                re.search(rf"(^|[\s([{{])@{re.escape(handle)}(?![\w-])", text)
-                for handle in handles
-            ):
+        for profile_id in scan_mentions(
+            self.repository,
+            message.channel_id,
+            message.content,
+            exclude_profile=message.author_profile_id,
+        ):
+            if profile_id in members:
                 result.append((profile_id, ("agent_mention",)))
         return result
 

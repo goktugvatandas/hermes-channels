@@ -1,8 +1,8 @@
-from hermes_crew_backend.context_builder import ContextBuilder, RESPONSE_CONTRACT
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.models import ProjectRef
-from hermes_crew_backend.repositories import CrewRepository
-from hermes_crew_backend.routing import Router
+from hermes_channels_backend.context_builder import ContextBuilder, RESPONSE_CONTRACT
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.models import ProjectRef
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.routing import Router
 
 
 def _review_intent() -> dict:
@@ -19,7 +19,7 @@ def _review_intent() -> dict:
 
 def test_agent_context_contains_resolved_scope_and_omits_other_threads(tmp_path):
     """A turn must see its own project/thread, never a sibling thread's content."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     project = ProjectRef(
         mode="project",
         profile="atlas",
@@ -79,7 +79,7 @@ def test_agent_context_contains_resolved_scope_and_omits_other_threads(tmp_path)
 
 def test_agent_context_caps_each_message_and_total_size(tmp_path):
     """One pathological message must not overrun the model context budget."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     long_tail = "END_OF_OVERSIZED_MESSAGE"
@@ -95,7 +95,7 @@ def test_agent_context_caps_each_message_and_total_size(tmp_path):
 
 def test_classifier_context_is_json_only_and_lists_exact_members(tmp_path):
     """The classifier must be constrained to enabled channel profile ids."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", purpose="Route requests")
     repo.add_member(channel.id, "atlas")
     repo.add_member(channel.id, "scout", activation_policy="observer")

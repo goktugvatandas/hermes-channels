@@ -47,7 +47,7 @@ const channel: CrewChannel = {
 
 afterEach(cleanup)
 
-describe('Hermes Crew user journey', () => {
+describe('Hermes Channels user journey', () => {
   it('loads a channel and sends a project-scoped message to a tagged specialist', async () => {
     const messages: CrewMessage[] = []
     const requests: Array<{ path: string; body?: unknown }> = []
@@ -102,12 +102,9 @@ describe('Hermes Crew user journey', () => {
     fireEvent.change(within(composer).getByLabelText('Project scope'), {
       target: { value: 'project' },
     })
-    fireEvent.change(within(composer).getByLabelText('Project profile'), {
-      target: { value: 'atlas' },
-    })
     await within(composer).findByRole('option', { name: 'Web' })
     fireEvent.change(within(composer).getByLabelText('Hermes project'), {
-      target: { value: 'p-web' },
+      target: { value: 'atlas::p-web' },
     })
     fireEvent.change(within(composer).getByLabelText('Message'), {
       target: { value: '@scout Inspect the failing web flow' },

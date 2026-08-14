@@ -5,6 +5,7 @@ import type { CrewApi } from '../../src/desktop/api'
 import type { TurnSummary } from '../../src/desktop/conversation-model'
 import { MessageList } from '../../src/desktop/components/message-list'
 import { CrewComposer } from '../../src/desktop/components/crew-composer'
+import { ProjectPicker } from '../../src/desktop/components/project-picker'
 import { PresentationContext } from '../../src/desktop/presentation'
 import type { CrewChannel, CrewMessage, HermesProfile, MessageReceipt } from '../../src/desktop/types'
 import { CrewPage } from '../../src/desktop/views/crew-page'
@@ -106,6 +107,11 @@ function apiFixture() {
       createChannel,
       createMessage,
       listMembers: vi.fn(async () => []),
+      listChannelMembers: vi.fn(async () => [
+        { profileId: 'atlas', activationPolicy: 'always' },
+      ]),
+      updateChannelMember: vi.fn(async () => ({ profileId: 'atlas', activationPolicy: 'always' })),
+      removeChannelMember: vi.fn(async () => ({ ok: true })),
       getMe: vi.fn(async () => ({ displayName: 'You', avatar: null, color: null })),
       imageGenerationStatus: vi.fn(async () => ({ available: false, provider: null })),
     } as unknown as CrewApi,
@@ -125,7 +131,7 @@ describe('channel flow', () => {
     const header = screen.getByRole('banner', { name: 'Channel header' })
     expect(within(header).getByText('#general')).not.toBeNull()
     expect(within(header).getByText('Web')).not.toBeNull()
-    expect(within(header).getByLabelText('Atlas')).not.toBeNull()
+    expect(await within(header).findByLabelText('Atlas')).not.toBeNull()
   })
 
   it('opens members and summarized activity from channel details', async () => {
@@ -136,7 +142,7 @@ describe('channel flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Channel details' }))
 
     const details = await screen.findByRole('complementary', { name: 'Channel details' })
-    expect(within(details).getByRole('region', { name: 'Crew members' })).not.toBeNull()
+    expect(within(details).getByRole('region', { name: 'Channel members' })).not.toBeNull()
     expect(within(details).getByRole('region', { name: 'Activity' })).not.toBeNull()
   })
 
@@ -284,9 +290,9 @@ describe('channel flow', () => {
     )
 
     expect(await screen.findByRole('region', { name: '#research' })).not.toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Hermes Crew' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Hermes Channels' })).toBeNull()
     expect(screen.queryByRole('navigation', { name: 'Crew channels' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Agent Lab' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Bot Management' })).toBeNull()
     await waitFor(() => expect(onChannelViewed).toHaveBeenLastCalledWith('research'))
   })
 
@@ -439,12 +445,9 @@ describe('channel flow', () => {
     fireEvent.change(within(composer).getByLabelText('Project scope'), {
       target: { value: 'project' },
     })
-    fireEvent.change(within(composer).getByLabelText('Project profile'), {
-      target: { value: 'atlas' },
-    })
     await within(composer).findByRole('option', { name: 'Web' })
     fireEvent.change(within(composer).getByLabelText('Hermes project'), {
-      target: { value: 'p-web' },
+      target: { value: 'atlas::p-web' },
     })
     fireEvent.click(within(composer).getByRole('button', { name: 'Send' }))
 
@@ -453,7 +456,7 @@ describe('channel flow', () => {
         channel.id,
         expect.objectContaining({
           content: '@all Review this implementation',
-          mentions: ['atlas', 'critic'],
+          mentions: ['atlas'],
           rootMessageId: null,
           project: {
             mode: 'project',
@@ -468,6 +471,30 @@ describe('channel flow', () => {
     // Reset to inherit removes the scope chip from the footer.
     expect(within(composer).queryByTitle('Change project scope')).toBeNull()
     expect((within(composer).getByLabelText('Message') as HTMLTextAreaElement).value).toBe('')
+  })
+
+  it('keeps a selected composite project when another profile registers the same cwd', async () => {
+    const { api } = apiFixture()
+    vi.mocked(api.listProjects).mockImplementation(async (profile) => [{
+      id: profile === 'atlas' ? 'owner-web' : 'critic-web',
+      name: 'Web',
+      primaryPath: '/work/web',
+      archived: false,
+    }])
+    render(
+      <ProjectPicker
+        api={api}
+        onChange={() => undefined}
+        profiles={profiles}
+        value={{
+          mode: 'project', profile: 'critic', projectId: 'critic-web',
+          label: 'Web', cwd: '/work/web',
+        }}
+      />,
+    )
+
+    const picker = await screen.findByLabelText('Hermes project') as HTMLSelectElement
+    await waitFor(() => expect(picker.value).toBe('critic::critic-web'))
   })
 
   it('sends with Enter and keeps Shift+Enter available for multiline input', async () => {
@@ -491,15 +518,16 @@ describe('channel flow', () => {
     render(<CrewPage api={api} initialView="channels" />)
     const textarea = await screen.findByLabelText('Message') as HTMLTextAreaElement
 
-    fireEvent.change(textarea, { target: { value: '@cr' } })
-    expect(screen.getByRole('option', { name: '@critic' })).not.toBeNull()
+    fireEvent.change(textarea, { target: { value: '@at' } })
+    expect(screen.getByRole('option', { name: '@atlas' })).not.toBeNull()
+    expect(screen.queryByRole('option', { name: '@critic' })).toBeNull()
     fireEvent.keyDown(textarea, { key: 'ArrowDown' })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(textarea.value).toBe('@critic ')
+    expect(textarea.value).toBe('@atlas ')
 
-    fireEvent.change(textarea, { target: { value: '@critic review this' } })
+    fireEvent.change(textarea, { target: { value: '@atlas review this' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    await waitFor(() => expect(createMessage).toHaveBeenCalledWith(channel.id, expect.objectContaining({ mentions: ['critic'] })))
+    await waitFor(() => expect(createMessage).toHaveBeenCalledWith(channel.id, expect.objectContaining({ mentions: ['atlas'] })))
   })
 
   it('restores drafts and timeline position when returning to a channel', async () => {

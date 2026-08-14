@@ -20,7 +20,7 @@ interface CrewComposerProps {
   onSent(receipt: MessageReceipt, pendingMessageId: string): void
   value?: string
   onValueChange?(value: string): void
-  onNavigate?(view: 'home' | 'channels' | 'workshop' | 'search' | 'profile'): void
+  onNavigate?(view: 'home' | 'channels' | 'workshop' | 'search' | 'profile' | 'settings'): void
 }
 
 interface PendingAttempt {
@@ -107,7 +107,7 @@ export function CrewComposer({ api, channelId, profiles, rootMessageId = null, f
   ]
   const navCommands: CommandDef[] = onNavigate ? [
     { name: 'home', description: 'Go to the Crew home', run: () => onNavigate('home') },
-    { name: 'lab', description: 'Open the Agent Lab', run: () => onNavigate('workshop') },
+    { name: 'lab', description: 'Open the Bot Management', run: () => onNavigate('workshop') },
     { name: 'profile', description: 'Edit how you appear in channels', run: () => onNavigate('profile') },
     { name: 'search', description: 'Search messages and activity', run: () => onNavigate('search') },
   ] : []
@@ -309,7 +309,7 @@ export function CrewComposer({ api, channelId, profiles, rootMessageId = null, f
             onKeyDown={handleKeyDown}
             onKeyUp={(event) => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) syncToken(content) }}
             onScroll={(event) => { if (overlayRef.current) overlayRef.current.scrollTop = event.currentTarget.scrollTop }}
-            placeholder="Message your crew…  ( @ mentions · / commands )"
+            placeholder="Message the channel…  ( @ mentions · / commands )"
             ref={textareaRef}
             rows={1}
             value={content}

@@ -24,7 +24,7 @@ interface LiveMessage {
 }
 
 /**
- * Crew turn prompts embed the full routing context; keep it inspectable but
+ * Channel turn prompts embed the full routing context; keep it inspectable but
  * folded. COUPLING: mirrors the prompt shape produced by the backend's
  * context_builder.py ("## CHANNEL" first section, "message: [ts] author: …"
  * trigger line). Renderer degrades to a generic summary if that shape moves.
@@ -186,7 +186,7 @@ export function SessionConsole({ api, sessionId, profileName, onClose }: Session
           {rows.map((message, index) => {
             const content = stripIntentMarkers(message.content)
             const { context, visible } = message.role === 'user' ? splitCrewContext(content) : { context: null, visible: content }
-            const name = message.role === 'user' ? (context ? 'Crew' : 'You') : agentName
+            const name = message.role === 'user' ? (context ? 'Channel' : 'You') : agentName
             return (
               <li className="grid grid-cols-[44px_minmax(0,1fr)] gap-0" key={`${message.createdAt}:${index}`}>
                 <Avatar name={name} size="md" />

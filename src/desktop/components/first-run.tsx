@@ -19,7 +19,7 @@ export function FirstRun({ api, profiles, onComplete }: { api: CrewApi; profiles
       })
       onComplete(channel)
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Crew setup failed')
+      setError(reason instanceof Error ? reason.message : 'Channels setup failed')
     } finally {
       setBusy(false)
     }
@@ -31,11 +31,11 @@ export function FirstRun({ api, profiles, onComplete }: { api: CrewApi; profiles
           <span className="rounded-full ring-2 ring-(--color-background)" key={profile.name}><MemberAvatar profileId={profile.name} size="lg" /></span>
         ))}
       </div>
-      <div><h2 className="text-lg font-semibold">Meet your Hermes Crew</h2><p className="mt-1 text-sm text-(--ui-text-secondary)">Create a local #general channel and choose the profile that answers untagged messages.</p></div>
+      <div><h2 className="text-lg font-semibold">Meet your Hermes Channels</h2><p className="mt-1 text-sm text-(--ui-text-secondary)">Create a local #general channel and choose the profile that answers untagged messages.</p></div>
       <label className="grid gap-1.5 text-left text-xs font-medium text-(--ui-text-secondary)">Default responder<select className="rounded-lg border border-(--ui-stroke-secondary) bg-background px-3 py-2 text-sm font-normal text-foreground" onChange={(event) => setResponder(event.target.value)} value={responder}>{profiles.map((profile) => <option key={profile.name} value={profile.name}>{presentedName(presentation, profile.name)}</option>)}</select></label>
       <p className="text-xs text-(--ui-text-tertiary)">The optional classifier starts off. Other profiles respond when mentioned.</p>
       {error ? <p role="alert" className="text-xs text-red-500">{error}</p> : null}
-      <button className="rounded-full bg-(--ui-accent) px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50" disabled={busy || !responder} onClick={() => void create()} type="button">{busy ? 'Creating…' : 'Create Crew'}</button>
+      <button className="rounded-full bg-(--ui-accent) px-4 py-2 text-sm font-medium text-white shadow-sm disabled:opacity-50" disabled={busy || !responder} onClick={() => void create()} type="button">{busy ? 'Creating…' : 'Create workspace'}</button>
     </section>
   )
 }

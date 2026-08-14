@@ -21,7 +21,10 @@ const AGENT_CLAIM: DispatchClaim = {
   createdAt: 1,
 }
 
-function setup(claim: DispatchClaim | undefined = AGENT_CLAIM) {
+function setup(
+  claim: DispatchClaim | undefined = AGENT_CLAIM,
+  settle: { completeSettleMs?: number; fallbackSettleMs?: number } = {},
+) {
   const calls: Array<[string, Record<string, unknown>]> = []
   let nextClaim: DispatchClaim | undefined = claim
   const rest = vi.fn(async (path: string) => {
@@ -42,7 +45,8 @@ function setup(claim: DispatchClaim | undefined = AGENT_CLAIM) {
     },
   )
   const worker = new GatewayWorker({
-    completeSettleMs: 0,
+    completeSettleMs: settle.completeSettleMs ?? 0,
+    fallbackSettleMs: settle.fallbackSettleMs,
     gatewayState: { get: () => 'open' },
     onEvent: () => () => undefined,
     request,
@@ -69,7 +73,7 @@ describe('GatewayWorker', () => {
         'session.create',
         {
           cols: 96,
-          source: 'desktop',
+          source: 'tool',
           cwd: '/work/web',
           profile: 'atlas',
           model: 'gpt-5.6',
@@ -110,7 +114,7 @@ describe('GatewayWorker', () => {
       type: 'message.complete',
       session_id: 'runtime-1',
       payload: {
-        text: 'Done.\n<!-- hermes-crew:intent {"schemaVersion":1,"intent":"result"} -->',
+        text: 'Done.\n<!-- hermes-channels:intent {"schemaVersion":1,"intent":"result"} -->',
       },
     })
 
@@ -144,7 +148,7 @@ describe('GatewayWorker', () => {
     await worker.handleGatewayEvent({
       type: 'message.complete',
       session_id: 'runtime-1',
-      payload: { text: '[[hermes-crew:intent {"schemaVersion":1,"intent":"handoff","recipients":["freya"],"replyExpected":true,"replyBudget":1}]]' },
+      payload: { text: '[[hermes-channels:intent {"schemaVersion":1,"intent":"handoff","recipients":["freya"],"replyExpected":true,"replyBudget":1}]]' },
     })
 
     await new Promise((resolve) => setTimeout(resolve, 5))
@@ -153,7 +157,7 @@ describe('GatewayWorker', () => {
     const body = (completion?.[1] as { body: { envelope: unknown; visibleText: string } }).body
     expect(body.envelope).toMatchObject({ intent: 'handoff', recipients: ['freya'] })
     expect(body.visibleText).toContain('Plan: split /flip')
-    expect(body.visibleText).not.toContain('hermes-crew:intent')
+    expect(body.visibleText).not.toContain('hermes-channels:intent')
     // Exactly one completion despite two message.complete frames.
     expect(restMock.mock.calls.filter(([path]) => path === '/dispatch/turn-1/complete')).toHaveLength(1)
   })
@@ -166,7 +170,7 @@ describe('GatewayWorker', () => {
     await worker.handleGatewayEvent({
       type: 'message.delta',
       session_id: 'runtime-1',
-      payload: { text: 'Handing off.\n<!-- hermes-crew:intent {"schemaVersion":1,"intent":"handoff","recipients":["freya"],"replyExpected":true,"replyBudget":1} -->' },
+      payload: { text: 'Handing off.\n<!-- hermes-channels:intent {"schemaVersion":1,"intent":"handoff","recipients":["freya"],"replyExpected":true,"replyBudget":1} -->' },
     })
     // …but the complete frame delivers a rendered variant without it.
     await worker.handleGatewayEvent({
@@ -183,6 +187,44 @@ describe('GatewayWorker', () => {
         envelope: expect.objectContaining({ intent: 'handoff', recipients: ['freya'] }),
       },
     })
+  })
+
+  it('never finalizes on stream quiet before a message.complete arrives', async () => {
+    // The "I'll load the skill" truncation: the model streams an opening
+    // sentence, then goes silent while a tool (skill load) runs. Quiet alone
+    // must not complete the turn — only message.complete banks a reply.
+    const { rest, worker } = setup()
+    await worker.claimOnce()
+
+    await worker.handleGatewayEvent({
+      type: 'message.delta',
+      session_id: 'runtime-1',
+      payload: { text: "I'll load the channel-collaboration skill first." },
+    })
+    await worker.handleGatewayEvent({
+      type: 'tool.start',
+      session_id: 'runtime-1',
+      payload: { name: 'skill' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    const restMock = vi.mocked(rest)
+    expect(restMock.mock.calls.some(([path]) => path === '/dispatch/turn-1/complete')).toBe(false)
+
+    // The real completion (with the actual answer) still finalizes normally.
+    await worker.handleGatewayEvent({
+      type: 'message.delta',
+      session_id: 'runtime-1',
+      payload: { text: ' Loaded. Here is the answer.' },
+    })
+    await worker.handleGatewayEvent({
+      type: 'message.complete',
+      session_id: 'runtime-1',
+      payload: { text: 'Loaded. Here is the answer.' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    const completion = restMock.mock.calls.find(([path]) => path === '/dispatch/turn-1/complete')
+    const body = (completion?.[1] as { body: { visibleText: string } }).body
+    expect(body.visibleText).toContain('Here is the answer')
   })
 
   it('interrupts only the runtime session bound to a cancelled turn', async () => {
@@ -243,7 +285,7 @@ describe('GatewayWorker', () => {
         'session.create',
         {
           cols: 96,
-          source: 'desktop',
+          source: 'tool',
           model: 'gemini-2.5-flash',
           provider: 'google',
           reasoning_effort: 'low',
@@ -256,7 +298,7 @@ describe('GatewayWorker', () => {
           session_id: 'runtime-1',
           instructions: 'Return JSON only.',
           input: 'Which member should respond?',
-          task: 'hermes_crew_classifier',
+          task: 'hermes_channels_classifier',
           max_tokens: 300,
           temperature: 0,
         },
@@ -310,5 +352,87 @@ describe('GatewayWorker', () => {
         },
       },
     })
+  })
+})
+
+describe('sloppy marker stripping', () => {
+  it('hides marker lines with truncated closers from visible text', async () => {
+    const { parseIntentMarker, stripIntentMarkers } = await import('../../src/desktop/intent-marker')
+    const text = 'Done.\n\n[[hermes-channels:intent {"schemaVersion":1,"intent":"inform","summary":"x"}]'
+    expect(stripIntentMarkers(text)).toBe('Done.')
+    expect(parseIntentMarker(text).visibleText).toBe('Done.')
+    const legacy = 'Done.\n\n[[hermes-crew:intent {"schemaVersion":1,"intent":"inform"}]'
+    expect(stripIntentMarkers(legacy)).toBe('Done.')
+    const multiline = 'Done.\n\n[[hermes-channels:intent {\n"schemaVersion": 1,\n"intent": "inform"\n}]]'
+    expect(stripIntentMarkers(multiline)).toBe('Done.')
+  })
+})
+
+describe('post-complete tool activity', () => {
+  it('does not finalize while a tool runs after a banked complete', async () => {
+    vi.useRealTimers()
+    // Real settle windows: short must NOT fire while the tool gap is open.
+    const { rest, worker } = setup(AGENT_CLAIM, { completeSettleMs: 40, fallbackSettleMs: 10_000 })
+    await worker.claimOnce()
+
+    await worker.handleGatewayEvent({
+      type: 'message.complete',
+      session_id: 'runtime-1',
+      payload: { text: 'Let me check the skill first.' },
+    })
+    await worker.handleGatewayEvent({
+      type: 'tool.start',
+      session_id: 'runtime-1',
+      payload: { name: 'skill' },
+    })
+    // Well past the 40ms short settle — the tool gap must hold finalize open.
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    const restMock = vi.mocked(rest)
+    expect(restMock.mock.calls.some(([path]) => path === '/dispatch/turn-1/complete')).toBe(false)
+
+    await worker.handleGatewayEvent({
+      type: 'message.complete',
+      session_id: 'runtime-1',
+      payload: { text: 'Checked. Final answer here.' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    const completion = restMock.mock.calls.find(([path]) => path === '/dispatch/turn-1/complete')
+    const body = (completion?.[1] as { body: { visibleText: string } }).body
+    expect(body.visibleText).toContain('Final answer here')
+  })
+
+  it('does not finalize while a new assistant message streams after a completion', async () => {
+    vi.useRealTimers()
+    const { rest, worker } = setup(AGENT_CLAIM, { completeSettleMs: 40, fallbackSettleMs: 10_000 })
+    await worker.claimOnce()
+    await worker.handleGatewayEvent({
+      type: 'message.complete', session_id: 'runtime-1', payload: { text: 'First part.' },
+    })
+    await worker.handleGatewayEvent({
+      type: 'message.delta', session_id: 'runtime-1', payload: { text: 'Second part starts' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(vi.mocked(rest).mock.calls.some(([path]) => path === '/dispatch/turn-1/complete')).toBe(false)
+
+    await worker.handleGatewayEvent({
+      type: 'message.complete', session_id: 'runtime-1', payload: { text: 'Second part finished.' },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 80))
+    const completion = vi.mocked(rest).mock.calls.find(([path]) => path === '/dispatch/turn-1/complete')
+    expect((completion?.[1] as { body: { visibleText: string } }).body.visibleText)
+      .toContain('Second part finished')
+  })
+
+  it('cancels pending finalization when the worker is disposed', async () => {
+    vi.useFakeTimers()
+    const { rest, worker } = setup(AGENT_CLAIM, { completeSettleMs: 100 })
+    await worker.claimOnce()
+    await worker.handleGatewayEvent({
+      type: 'message.complete', session_id: 'runtime-1', payload: { text: 'Done.' },
+    })
+    worker.dispose()
+    await vi.advanceTimersByTimeAsync(200)
+    expect(vi.mocked(rest).mock.calls.some(([path]) => path === '/dispatch/turn-1/complete')).toBe(false)
+    vi.useRealTimers()
   })
 })

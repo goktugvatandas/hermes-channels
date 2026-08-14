@@ -55,3 +55,49 @@ export const host = {
     },
   },
 }
+
+// ── Select primitives: rendered as a NATIVE select so tests keep using
+// getByLabelText + fireEvent.change. Trigger/Content/Item act as markers the
+// Select root walks to collect the aria-label and options. ──
+import { Children, isValidElement } from 'react'
+
+export function SelectTrigger(_props: Record<string, unknown>): null { return null }
+export function SelectContent(_props: Record<string, unknown>): null { return null }
+export function SelectItem(_props: Record<string, unknown>): null { return null }
+export function SelectValue(_props: Record<string, unknown>): null { return null }
+
+export function Select({ value, onValueChange, children }: {
+  value?: string
+  onValueChange?(next: string): void
+  children?: unknown
+}): ReactElement {
+  const items: Array<{ value: string; label: unknown }> = []
+  let label: string | undefined
+  const walk = (node: unknown): void => {
+    Children.forEach(node as Parameters<typeof Children.forEach>[0], (child) => {
+      if (!isValidElement(child)) return
+      const element = child as ReactElement & { type: unknown }
+      const props = element.props as Record<string, unknown>
+      if (element.type === SelectTrigger) {
+        if (typeof props['aria-label'] === 'string') label = props['aria-label']
+        walk(props.children)
+      } else if (element.type === SelectContent) {
+        walk(props.children)
+      } else if (element.type === SelectItem) {
+        items.push({ value: String(props.value), label: props.children })
+      } else if (props?.children) {
+        walk(props.children)
+      }
+    })
+  }
+  walk(children)
+  return createElement(
+    'select',
+    {
+      'aria-label': label,
+      onChange: (event: { target: { value: string } }) => onValueChange?.(event.target.value),
+      value,
+    },
+    items.map((item) => createElement('option', { key: item.value, value: item.value }, item.label as never)),
+  )
+}

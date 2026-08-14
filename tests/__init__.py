@@ -1,1 +1,1 @@
-"""Hermes Crew test package."""
+"""Hermes Channels test package."""

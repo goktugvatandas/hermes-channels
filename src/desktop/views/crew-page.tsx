@@ -17,9 +17,10 @@ import { HomeView } from './home-view'
 import { ProfileView } from './profile-view'
 import { SessionConsole } from './session-console'
 import { ThreadView } from './thread-view'
+import { SettingsView } from './settings-view'
 import { StudioView } from './studio-view'
 
-export type CrewView = 'home' | 'channels' | 'search' | 'workshop' | 'profile'
+export type CrewView = 'home' | 'channels' | 'search' | 'workshop' | 'profile' | 'settings'
 
 // Bounds the in-memory journal. Eviction is per-channel (newest N each), so
 // one busy channel cannot push a quiet channel's backfilled history out of
@@ -51,19 +52,24 @@ export interface CrewPageProps {
   onChannelCreated?(channel: CrewChannel): void
   onChannelViewed?(channelId: string | null): void
   onNavigateChannel?(channelId: string | null): void
+  /** Desktop: root views are real routes; this navigates instead of switching in-page. */
+  onNavigateView?(view: 'home' | 'workshop' | 'profile' | 'settings' | 'search'): void
 }
 
 // Module-level on purpose: defining this inside CrewPage would make it a new
 // component type on every render, so React would remount the rail (and eat
 // in-flight clicks) each time the 2s event poll updates state.
-function DetailsRail({ api, events, channelId, profiles, onClose, onOpenConsole }: {
+function DetailsRail({ api, events, channel, profiles, onClose, onOpenConsole, onMembershipChange, onChannelChange }: {
   api: CrewApi
   events: EventFrame[]
-  channelId: string
+  channel: CrewChannel
   profiles: HermesProfile[]
   onClose(): void
   onOpenConsole(sessionId: string, profileId: string): void
+  onMembershipChange?(): void
+  onChannelChange?(channel: CrewChannel): void
 }) {
+  const channelId = channel.id
   return (
     <aside aria-label="Channel details" aria-modal="true" className="absolute inset-y-0 right-0 z-10 flex min-h-0 w-[300px] flex-col border-l border-(--ui-stroke-secondary) bg-background transition-[opacity,transform] duration-150 motion-reduce:transform-none motion-reduce:transition-none @4xl:static @4xl:w-[320px]" onKeyDown={(event) => { if (event.key === 'Escape') onClose() }}>
       <header className="flex min-h-14 items-center justify-between border-b border-(--ui-stroke-secondary) py-2 pl-4 pr-2">
@@ -75,6 +81,10 @@ function DetailsRail({ api, events, channelId, profiles, onClose, onOpenConsole 
           activeProfileIds={summarizeTurns(events.filter((event) => event.channelId === channelId))
             .filter((turn) => !turn.terminal)
             .map((turn) => turn.profileId)}
+          api={api}
+          channel={channel}
+          onChannelChange={onChannelChange}
+          onMembershipChange={onMembershipChange}
           profiles={profiles}
         />
         <ActivityPanel api={api} events={events.filter((event) => event.channelId === channelId)} onOpenConsole={onOpenConsole} />
@@ -90,6 +100,7 @@ export function CrewPage({
   onChannelCreated,
   onChannelViewed,
   onNavigateChannel,
+  onNavigateView,
 }: CrewPageProps) {
   const [channels, setChannels] = useState<CrewChannel[]>([])
   const [profiles, setProfiles] = useState<HermesProfile[]>([])
@@ -102,19 +113,20 @@ export function CrewPage({
   const [view, setView] = useState<CrewView>(initialChannelId !== undefined ? 'channels' : initialView)
 
   // Hermes may reuse the mounted page component when switching between the
-  // /crew, /crew/agent-lab, and channel routes; follow the new route's intent.
+  // /crew, /channels/bot-management, and channel routes; follow the new route's intent.
   useEffect(() => {
     setView(initialChannelId !== undefined ? 'channels' : initialView)
     setSessionFocus(null)
   }, [initialChannelId, initialView])
   const [channelUi, setChannelUi] = useState<ChannelUiState>({})
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const [membershipRevision, setMembershipRevision] = useState(0)
   const [members, setMembers] = useState<Record<string, CrewMember>>({})
   const [me, setMe] = useState<UserIdentity>(DEFAULT_IDENTITY)
   const presentation = useMemo(() => ({ members, me }), [members, me])
 
   // Stored avatars/display names for every member plus the human user.
-  // Refreshed on view changes so Agent Lab edits show up when returning to
+  // Refreshed on view changes so Bot Management edits show up when returning to
   // channels without a poll.
   const presentationRequest = useRef(0)
   const refreshPresentation = useCallback(() => {
@@ -157,7 +169,7 @@ export function CrewPage({
           return nextChannels[0]?.id || null
         })
       })
-      .catch((reason: unknown) => { if (current) setError(reason instanceof Error ? reason.message : 'Crew could not be loaded') })
+      .catch((reason: unknown) => { if (current) setError(reason instanceof Error ? reason.message : 'Channels could not be loaded') })
     return () => { current = false }
   }, [api, initialChannelId, onNavigateChannel])
 
@@ -213,6 +225,11 @@ export function CrewPage({
   // Browsing inside the Crew page stays inside the Crew page; the host's
   // sidebar channel links remain the way into standalone channel surfaces.
   function selectChannel(channelId: string) {
+    if (onNavigateView) {
+      // Channels are standalone routed pages on this host.
+      onNavigateChannel?.(channelId)
+      return
+    }
     setSelectedId(channelId)
     setThreadRoot(null)
     setDetailsOpen(false)
@@ -231,7 +248,11 @@ export function CrewPage({
     setDetailsOpen(true)
   }
 
-  function openRootView(nextView: 'home' | 'search' | 'workshop' | 'profile') {
+  function openRootView(nextView: 'home' | 'search' | 'workshop' | 'profile' | 'settings') {
+    if (onNavigateView) {
+      onNavigateView(nextView)
+      return
+    }
     setSessionFocus(null)
     setView(nextView)
     onNavigateChannel?.(null)
@@ -244,8 +265,8 @@ export function CrewPage({
         {error ? <p role="alert" className="p-4 text-sm text-red-500">{error}</p> : null}
         {sessionFocus ? <CrashGuard label="The session console" onClose={() => setSessionFocus(null)}><SessionConsole api={api} onClose={() => setSessionFocus(null)} profileName={sessionFocus.profileId} sessionId={sessionFocus.sessionId} /></CrashGuard> :
         <section className={`relative grid min-h-0 flex-1 grid-cols-1 ${threadRoot || detailsOpen ? '@4xl:grid-cols-[minmax(0,1fr)_auto]' : ''}`}>
-          {selected ? <ChannelView api={api} channel={selected} events={events.filter((event) => event.channelId === selected.id)} messageRevision={messageRevision} onOpenDetails={openDetails} onOpenThread={openThread} onUiSnapshot={(patch) => setChannelUi((current) => updateChannelUiState(current, selected.id, patch))} profiles={profiles} uiSnapshot={channelUiSnapshot(channelUi, selected.id)} /> : null}
-          {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} events={events.filter((event) => event.channelId === selected.id)} key={threadRoot.id} onClose={() => setThreadRoot(null)} profiles={profiles} returnFocusRef={threadReturnFocus} root={threadRoot} /> : selected && detailsOpen ? <DetailsRail api={api} channelId={selected.id} events={events} onClose={() => setDetailsOpen(false)} onOpenConsole={openConsole} profiles={profiles} /> : null}
+          {selected ? <ChannelView api={api} channel={selected} events={events.filter((event) => event.channelId === selected.id)} membershipRevision={membershipRevision} messageRevision={messageRevision} onNavigate={(next) => { if (next === 'channels') return; openRootView(next) }} onOpenDetails={openDetails} onOpenThread={openThread} onUiSnapshot={(patch) => setChannelUi((current) => updateChannelUiState(current, selected.id, patch))} profiles={profiles} uiSnapshot={channelUiSnapshot(channelUi, selected.id)} /> : null}
+          {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} events={events.filter((event) => event.channelId === selected.id)} key={threadRoot.id} membershipRevision={membershipRevision} onClose={() => setThreadRoot(null)} profiles={profiles} returnFocusRef={threadReturnFocus} root={threadRoot} /> : selected && detailsOpen ? <DetailsRail api={api} channel={selected} events={events} onChannelChange={(updated) => setChannels((current) => current.map((item) => item.id === updated.id ? updated : item))} onClose={() => setDetailsOpen(false)} onMembershipChange={() => setMembershipRevision((value) => value + 1)} onOpenConsole={openConsole} profiles={profiles} /> : null}
         </section>}
       </main>
       </PresentationContext.Provider>
@@ -257,7 +278,7 @@ export function CrewPage({
     <main className="@container flex h-full min-h-0 flex-col bg-background text-foreground">
       <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-(--ui-stroke-secondary) px-5 py-3">
         <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold">Hermes Crew</h1>
+          <h1 className="truncate text-base font-semibold">Hermes Channels</h1>
           <p className="mt-0.5 hidden truncate text-sm text-(--ui-text-secondary) @2xl:block">
             Persistent Hermes profiles working together in local channels.
           </p>
@@ -265,9 +286,9 @@ export function CrewPage({
         <nav aria-label="Crew views" className="flex shrink-0 gap-1 rounded-lg border border-(--ui-stroke-secondary) bg-(--ui-surface-secondary) p-0.5 text-sm">
           {([
             ['home', 'Home', () => openRootView('home')],
-            ['channels', 'Channels', () => setView('channels')],
-            ['workshop', 'Agent Lab', () => openRootView('workshop')],
+            ['workshop', 'Bot Management', () => openRootView('workshop')],
             ['profile', 'Profile', () => openRootView('profile')],
+            ['settings', 'Settings', () => openRootView('settings')],
           ] as const).map(([id, label, activate]) => (
             <button
               aria-pressed={view === id}
@@ -291,11 +312,11 @@ export function CrewPage({
           <div className="grid flex-1 place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>
         )
 
-      ) : view === 'workshop' ? <StudioView api={api} onPresentationChange={refreshPresentation} /> : view === 'profile' ? <ProfileView api={api} identity={me} onIdentityChange={setMe} /> : view === 'search' ? <SearchView api={api} channels={channels} profiles={profiles} /> :
+      ) : view === 'workshop' ? <StudioView api={api} onPresentationChange={refreshPresentation} /> : view === 'profile' ? <ProfileView api={api} identity={me} onIdentityChange={setMe} /> : view === 'settings' ? <SettingsView api={api} /> : view === 'search' ? <SearchView api={api} channels={channels} profiles={profiles} /> :
       <section className={`relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[auto_minmax(0,1fr)] @2xl:grid-rows-1 ${threadRoot || detailsOpen ? '@2xl:grid-cols-[240px_minmax(0,1fr)] @4xl:grid-cols-[240px_minmax(0,1fr)_auto]' : '@2xl:grid-cols-[240px_minmax(0,1fr)]'}`}>
         <div className="min-h-0 max-h-44 border-b border-(--ui-stroke-secondary) @2xl:max-h-none @2xl:border-b-0 @2xl:border-r"><ChannelList channels={channels} onCreate={createChannel} onSelect={selectChannel} profiles={profiles} selectedId={selectedId} /></div>
-        {selected ? <ChannelView api={api} channel={selected} events={events.filter((event) => event.channelId === selected.id)} messageRevision={messageRevision} onOpenDetails={openDetails} onOpenThread={openThread} onUiSnapshot={(patch) => setChannelUi((current) => updateChannelUiState(current, selected.id, patch))} profiles={profiles} uiSnapshot={channelUiSnapshot(channelUi, selected.id)} onNavigate={openRootView} /> : profiles.length ? <FirstRun api={api} onComplete={(channel) => { setChannels([channel]); onChannelCreated?.(channel); selectChannel(channel.id) }} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>}
-        {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} events={events.filter((event) => event.channelId === selected.id)} key={threadRoot.id} onClose={() => setThreadRoot(null)} profiles={profiles} returnFocusRef={threadReturnFocus} root={threadRoot} /> : selected && detailsOpen ? <DetailsRail api={api} channelId={selected.id} events={events} onClose={() => setDetailsOpen(false)} onOpenConsole={openConsole} profiles={profiles} /> : null}
+        {selected ? <ChannelView api={api} channel={selected} events={events.filter((event) => event.channelId === selected.id)} membershipRevision={membershipRevision} messageRevision={messageRevision} onOpenDetails={openDetails} onOpenThread={openThread} onUiSnapshot={(patch) => setChannelUi((current) => updateChannelUiState(current, selected.id, patch))} profiles={profiles} uiSnapshot={channelUiSnapshot(channelUi, selected.id)} onNavigate={(next) => { if (next === 'channels') return; openRootView(next) }} /> : profiles.length ? <FirstRun api={api} onComplete={(channel) => { setChannels([channel]); onChannelCreated?.(channel); selectChannel(channel.id) }} profiles={profiles} /> : <div className="grid place-items-center p-6 text-sm text-(--ui-text-tertiary)">Create a Hermes profile first.</div>}
+        {selected && threadRoot ? <ThreadView api={api} channelId={selected.id} events={events.filter((event) => event.channelId === selected.id)} key={threadRoot.id} membershipRevision={membershipRevision} onClose={() => setThreadRoot(null)} profiles={profiles} returnFocusRef={threadReturnFocus} root={threadRoot} /> : selected && detailsOpen ? <DetailsRail api={api} channel={selected} events={events} onChannelChange={(updated) => setChannels((current) => current.map((item) => item.id === updated.id ? updated : item))} onClose={() => setDetailsOpen(false)} onMembershipChange={() => setMembershipRevision((value) => value + 1)} onOpenConsole={openConsole} profiles={profiles} /> : null}
       </section>}
     </main>
     </PresentationContext.Provider>

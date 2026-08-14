@@ -57,7 +57,7 @@ export function HomeView({ api, channels, profiles, events, onOpenChannel, onOpe
   return (
     <div className="min-h-0 flex-1 overflow-auto">
       <div className="mx-auto grid w-full max-w-4xl content-start gap-8 px-6 py-8">
-        <section aria-label="Crew status" className="flex flex-wrap items-center justify-between gap-4">
+        <section aria-label="Workspace status" className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="flex -space-x-3">
               {profiles.slice(0, 5).map((profile) => (
@@ -65,15 +65,15 @@ export function HomeView({ api, channels, profiles, events, onOpenChannel, onOpe
               ))}
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Your crew</h2>
+              <h2 className="text-lg font-semibold">Your bots</h2>
               <p className="text-sm text-(--ui-text-secondary)">
-                {profiles.length} {profiles.length === 1 ? 'agent' : 'agents'} · {online} online · {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
+                {profiles.length} {profiles.length === 1 ? 'bot' : 'bots'} · {online} online · {channels.length} {channels.length === 1 ? 'channel' : 'channels'}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <button aria-label="Edit your profile" className="flex items-center gap-2 rounded-lg border border-(--ui-stroke-secondary) py-1 pl-1 pr-3 text-sm font-medium transition-colors hover:bg-(--ui-surface-secondary)" onClick={onOpenProfile} title="Edit your profile" type="button"><UserAvatar size="sm" /> Profile</button>
-            <button className="rounded-lg bg-(--ui-accent) px-3 py-1.5 text-sm font-medium text-white" onClick={onOpenWorkshop} type="button">Open Agent Lab</button>
+            <button className="rounded-lg bg-(--ui-accent) px-3 py-1.5 text-sm font-medium text-white" onClick={onOpenWorkshop} type="button">Open Bot Management</button>
           </div>
         </section>
 
@@ -115,7 +115,7 @@ export function HomeView({ api, channels, profiles, events, onOpenChannel, onOpe
                       <span className="truncate text-sm font-semibold"><span className="text-(--ui-text-tertiary)">#</span>{channel.name}</span>
                       <span className="shrink-0 rounded-full bg-(--ui-surface-secondary) px-2 py-0.5 text-[11px] text-(--ui-text-secondary)">{project}</span>
                     </span>
-                    <span className="truncate text-xs text-(--ui-text-secondary)">{channel.topic || channel.purpose || 'Shared crew channel'}</span>
+                    <span className="truncate text-xs text-(--ui-text-secondary)">{channel.topic || channel.purpose || 'Shared channel'}</span>
                     <span className="flex items-center gap-2 text-[11px] text-(--ui-text-tertiary)">
                       {responder ? <span className="flex items-center gap-1"><MemberAvatar profileId={responder} size="sm" /> {displayName(responder)} answers by default</span> : <span>Mention-driven</span>}
                       {memberCounts[channel.id] ? <span>· {memberCounts[channel.id]} {memberCounts[channel.id] === 1 ? 'member' : 'members'}</span> : null}

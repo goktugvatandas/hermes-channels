@@ -6,22 +6,36 @@
 
 /*
  * Hermes Desktop compiles only its own utility classes, so the plugin ships
- * this stylesheet (scoped to .hermes-crew-desktop at build time) with every
- * utility Crew uses. Colors bridge to the host's theme tokens so Crew follows
+ * this stylesheet (scoped to .hermes-channels-desktop at build time) with every
+ * utility the plugin uses. Colors bridge to the host's theme tokens so the plugin follows
  * the active Desktop theme; only tokens the host does not define get values.
  */
 @theme inline {
-  --color-background: var(--crew-host-surface);
-  --color-foreground: var(--crew-host-ink);
+  --color-background: var(--channels-host-surface);
+  --color-foreground: var(--channels-host-ink);
 }
 
-.hermes-crew-desktop {
+.hermes-channels-desktop {
   display: contents;
-  --crew-host-surface: var(--background, #ffffff);
-  --crew-host-ink: var(--foreground, #1d1f24);
-  --color-background: var(--crew-host-surface);
-  --color-foreground: var(--crew-host-ink);
+  --channels-host-surface: var(--background, #ffffff);
+  --channels-host-ink: var(--foreground, #1d1f24);
+  --color-background: var(--channels-host-surface);
+  --color-foreground: var(--channels-host-ink);
   /* The host defines --ui-accent, --ui-stroke-secondary, and --ui-text-*;
-     --ui-surface-secondary is the one Crew token Hermes Desktop lacks. */
-  --ui-surface-secondary: color-mix(in srgb, var(--crew-host-ink) 6%, transparent);
+     --ui-surface-secondary is the one token Hermes Desktop lacks. */
+  --ui-surface-secondary: color-mix(in srgb, var(--channels-host-ink) 6%, transparent);
+}
+
+/* Native form popups (select option lists) render with the OS default scheme
+   unless told otherwise — unreadable over dark skins. The host toggles .dark
+   on :root; mirror it into the browser's color-scheme so popups match. */
+.hermes-channels-desktop select,
+.hermes-channels-desktop input,
+.hermes-channels-desktop textarea {
+  color-scheme: light;
+}
+:root.dark .hermes-channels-desktop select,
+:root.dark .hermes-channels-desktop input,
+:root.dark .hermes-channels-desktop textarea {
+  color-scheme: dark;
 }

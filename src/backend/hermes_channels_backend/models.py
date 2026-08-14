@@ -1,4 +1,4 @@
-"""Validated domain models shared across Crew backend boundaries."""
+"""Validated domain models shared across Channels backend boundaries."""
 
 from typing import Literal
 from uuid import UUID
@@ -35,7 +35,7 @@ def _validate_uuid4_hex(value: str) -> str:
 
 
 class WireModel(BaseModel):
-    """Base model supporting Crew's camelCase JSON wire representation."""
+    """Base model supporting Channels' camelCase JSON wire representation."""
 
     model_config = ConfigDict(
         alias_generator=_to_camel,

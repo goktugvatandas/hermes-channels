@@ -1,15 +1,15 @@
 import pytest
 
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.event_bus import EventBus
-from hermes_crew_backend.models import IntentEnvelope
-from hermes_crew_backend.repositories import CrewRepository
-from hermes_crew_backend.routing import Router
-from hermes_crew_backend.scheduler import Scheduler
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.event_bus import EventBus
+from hermes_channels_backend.models import IntentEnvelope
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.routing import Router
+from hermes_channels_backend.scheduler import Scheduler
 
 
 def _scheduler_with_turn(tmp_path, event_bus=None):
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas")
     message = repo.append_message(channel.id, "user", "build it")
@@ -58,6 +58,29 @@ def test_lifecycle_transitions_and_gateway_events_share_an_ordered_journal(tmp_p
         "completed",
     ]
     assert repo.require_message(scheduler.get(turn.id).result_message_id).content == "Done"
+
+
+def test_failed_completion_does_not_archive_a_still_running_session(tmp_path, monkeypatch):
+    repo, scheduler, turn = _scheduler_with_turn(tmp_path)
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(
+        turn.id, runtime_session_id="runtime-1", stored_session_id="stored-1"
+    )
+    archived = []
+    monkeypatch.setattr(scheduler, "_archive_turn_session", archived.append)
+    monkeypatch.setattr(
+        repo, "append_message", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("write failed"))
+    )
+
+    with pytest.raises(RuntimeError, match="write failed"):
+        scheduler.complete(
+            turn.id,
+            visible_text="Done",
+            envelope=IntentEnvelope(intent="result"),
+        )
+
+    assert archived == []
+    assert scheduler.get(turn.id).state == "running"
 
 
 def test_approval_resolution_returns_waiting_turn_to_running(tmp_path):

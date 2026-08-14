@@ -19,7 +19,7 @@ describe('FirstRun', () => {
     const api = { onboard } as unknown as CrewApi
     render(<FirstRun api={api} onComplete={onComplete} profiles={[atlas]} />)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create Crew' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create workspace' }))
 
     await waitFor(() => expect(onboard).toHaveBeenCalledWith({
       defaultResponderProfile: 'atlas', profiles: ['atlas'],

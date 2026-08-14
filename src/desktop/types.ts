@@ -110,27 +110,7 @@ export interface RoutingRulesConfig {
   max_concurrency: number
 }
 
-export interface CrewSchedule {
-  id: string
-  name: string
-  schedule: string
-  enabled: boolean
-  state: string | null
-  nextRunAt: number | null
-  lastRunAt: number | null
-  lastStatus: string | null
-  channelId: string | null
-  content: string | null
-  mentions: string[]
-}
 
-export interface StewardSettings {
-  enabled: boolean
-  intervalMinutes: number
-  stallMinutes: number
-  provider: string | null
-  model: string | null
-}
 
 export interface UserIdentity {
   displayName: string
@@ -212,4 +192,14 @@ export interface SessionTranscript {
   title: string
   model: string | null
   messages: SessionTranscriptMessage[]
+}
+
+export interface ChannelSection {
+  id: string
+  name: string
+}
+
+export interface ChannelSections {
+  sections: ChannelSection[]
+  assignments: Record<string, string>
 }

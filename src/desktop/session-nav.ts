@@ -3,18 +3,18 @@ import { host } from '@hermes/plugin-sdk'
 /**
  * True when running inside the Hermes web dashboard host.
  *
- * Detection uses a Crew-owned marker set by the dashboard entry, NOT the
+ * Detection uses a plugin-owned marker set by the dashboard entry, NOT the
  * host's SDK globals: Hermes Desktop's plugin loader also assigns
  * `__HERMES_PLUGIN_SDK__` to globalThis (timing-dependent on plugin load
  * order), so sniffing it misidentified the desktop as the dashboard.
  */
 export function isDashboardHost(): boolean {
   return typeof window !== 'undefined'
-    && (window as Window & { __HERMES_CREW_HOST__?: string }).__HERMES_CREW_HOST__ === 'dashboard'
+    && (window as Window & { __HERMES_CHANNELS_HOST__?: string }).__HERMES_CHANNELS_HOST__ === 'dashboard'
 }
 
 /**
- * Jump from Crew into the agent's native Hermes session for hands-on work.
+ * Jump from Channels into the agent's native Hermes session for hands-on work.
  * Both hosts navigate in-app: the dashboard resumes in its chat, Desktop
  * routes straight to the session view.
  */

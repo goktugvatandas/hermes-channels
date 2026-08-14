@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from hermes_crew_backend.db import CrewDatabase
+from hermes_channels_backend.db import CrewDatabase
 
 
 REQUIRED_TABLES = {
@@ -27,7 +27,7 @@ REQUIRED_TABLES = {
 
 def test_migration_enables_sqlite_safety_and_creates_domain_tables(tmp_path):
     """A fresh database must enforce FKs, WAL, and the complete v1 schema."""
-    db = CrewDatabase(tmp_path / "crew.db")
+    db = CrewDatabase(tmp_path / "channels.db")
 
     with db.connect() as conn:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
@@ -45,7 +45,7 @@ def test_migration_enables_sqlite_safety_and_creates_domain_tables(tmp_path):
 
 def test_message_idempotency_key_is_unique(tmp_path):
     """A reconnect must not persist the same human command twice."""
-    db = CrewDatabase(tmp_path / "crew.db")
+    db = CrewDatabase(tmp_path / "channels.db")
 
     with db.connect() as conn:
         conn.execute(

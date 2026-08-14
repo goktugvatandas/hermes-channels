@@ -12,6 +12,7 @@ from .context_builder import ContextBuilder
 from .event_bus import EventBus, EventFrame
 from .models import DispatchClaim, IntentEnvelope
 from .project_context import project_key, resolve_project_context, resolve_scope_id
+from .session_visibility import archive_stored_session
 from .repositories import CrewRepository
 from .routing import PlannedTurn, Router
 
@@ -376,6 +377,7 @@ class Scheduler:
                 now,
             )
         self.event_bus.publish(frame)
+        self._archive_turn_session(turn)
         for planned in self.router.plan(result.id):
             self.enqueue(planned)
         return self.get(turn_id)
@@ -384,8 +386,6 @@ class Scheduler:
         turn = self.get(turn_id)
         if turn.kind != "classification":
             raise ValueError("turn is not a classification claim")
-        if turn.trigger == "steward":
-            return self._complete_steward_judgment(turn, raw_result)
         suggestion = self.classifier.parse_result(raw_result, turn.channel_id)
         now = _now_ms()
         with self.repository.database.connect() as connection:
@@ -404,58 +404,10 @@ class Scheduler:
                 now,
             )
         self.event_bus.publish(frame)
+        self._archive_turn_session(turn)
         return [
             self.enqueue(planned)
             for planned in self.router.plan(turn.trigger_message_id, suggestion)
-        ]
-
-    def _complete_steward_judgment(
-        self, turn: TurnRecord, raw_result: str
-    ) -> list[TurnRecord]:
-        """A steward model judged a stalled channel; wake who it names.
-
-        The wake goes through Router.plan's normal loop, so depth, tree
-        budgets, pair repeats, and concurrency all still apply.
-        """
-        wake: list[str] = []
-        try:
-            payload = json.loads(raw_result)
-            if isinstance(payload, dict) and payload.get("respond") is True:
-                candidates = payload.get("wake")
-                confidence = payload.get("confidence", 0)
-                if (
-                    isinstance(candidates, list)
-                    and isinstance(confidence, (int, float))
-                    and confidence >= 0.5
-                ):
-                    wake = [value for value in candidates if isinstance(value, str)][:3]
-        except (json.JSONDecodeError, TypeError, ValueError):
-            wake = []
-        now = _now_ms()
-        with self.repository.database.connect() as connection:
-            self._require_transition(turn.state, "completed")
-            connection.execute(
-                """UPDATE turns SET state = 'completed', completed_at = ?, updated_at = ?
-                   WHERE id = ?""",
-                (now, now, turn.id),
-            )
-            frame = self._insert_event(
-                connection,
-                turn.channel_id,
-                turn.id,
-                "completed",
-                {"stewardWake": wake},
-                now,
-            )
-        self.event_bus.publish(frame)
-        if not wake:
-            return []
-        return [
-            self.enqueue(planned)
-            for planned in self.router.plan(
-                turn.trigger_message_id,
-                extra_candidates=[(profile, ("steward",)) for profile in wake],
-            )
         ]
 
     def cancel(self, turn_id: str) -> TurnRecord:
@@ -556,7 +508,7 @@ class Scheduler:
         """Interrupt orphaned in-flight turns.
 
         Both hosts (Hermes Desktop's embedded server and the web dashboard)
-        share crew.db, so a booting backend must not blanket-interrupt turns
+        share channels.db, so a booting backend must not blanket-interrupt turns
         another live host's worker is driving. A turn is only reaped when its
         runtime isn't in the caller's active set AND its journal has been
         silent for `stale_after_ms` (streaming/tool events count as liveness).
@@ -637,6 +589,14 @@ class Scheduler:
             rows = connection.execute(query, params).fetchall()
         return [self._frame(row) for row in rows]
 
+    def _archive_turn_session(self, turn: TurnRecord) -> None:
+        """Every turn end-of-life hides its worker session (soft archive).
+        Classification claims run under the default profile's store."""
+
+        archive_stored_session(
+            turn.profile_id or "default", turn.stored_session_id
+        )
+
     def _terminal_transition(
         self,
         turn: TurnRecord,
@@ -657,6 +617,7 @@ class Scheduler:
                 connection, turn.channel_id, turn.id, state, payload, now
             )
         self.event_bus.publish(frame)
+        self._archive_turn_session(turn)
         return self.get(turn.id)
 
     @staticmethod

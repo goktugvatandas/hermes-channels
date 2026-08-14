@@ -1,6 +1,6 @@
 # Architecture
 
-Hermes Crew is one product shipped into two hosts from a single codebase, with a
+Hermes Channels is one product shipped into two hosts from a single codebase, with a
 Python backend that runs inside the Hermes agent process.
 
 ```
@@ -15,13 +15,13 @@ Python backend that runs inside the Hermes agent process.
 ┌──────────────────────────────────────────────────────────────┐
 │ Python backend (FastAPI router, loaded by Hermes)            │
 │  routing · scheduler · context builder · intent · search     │
-│  SQLite: $HERMES_HOME/crew/crew.db (WAL, migrations)         │
+│  SQLite: $HERMES_HOME/channels/channels.db (WAL, migrations)         │
 └──────────────────────────────────────────────────────────────┘
               ▲
               │ session.create / prompt.submit / message.* events
 ┌─────────────┴──────────────┐
 │ Hermes gateway (per turn)  │  real agent sessions, stored in
-│ driven by GatewayWorker    │  $HERMES_HOME/state.db by Hermes
+│ driven by GatewayWorker    │  profiles/<bot>/state.db by Hermes
 └────────────────────────────┘
 ```
 
@@ -31,7 +31,7 @@ Python backend that runs inside the Hermes agent process.
 src/
   desktop/            Shared React UI + desktop plugin entry
     views/            crew-page (shell), home, channel, thread,
-                      studio (Agent Lab), session-console
+                      studio (Bot Management), session-console
     components/       composer, message rows, activity panel, …
     markdown.tsx      dependency-free Markdown → React renderer
     conversation-model.ts  message grouping + turn summaries
@@ -43,7 +43,7 @@ src/
                        detects light/dark from host background
     style.css          Tailwind input for the DASHBOARD stylesheet
     *-shim.ts          react/react-dom/plugin-sdk adapters
-  backend/hermes_crew_backend/
+  backend/hermes_channels_backend/
     api.py             FastAPI routes (channels, messages, turns, identity:
                        /me, /members, /image-generation, avatar generation,
                        profiles, search, events, transcripts)
@@ -51,14 +51,8 @@ src/
     scheduler.py       turn lifecycle, result placement, journal
     context_builder.py bounded per-turn prompts + response contract
     intent.py          intent envelope parsing (with placement)
-    schedules.py       recurring channel messages as Hermes cron jobs
-                       (tokenless script jobs posting via normal routing)
-    steward.py         off-by-default rule-based sweeps that unblock
-                       stalled chains (re-plan unserved recipients, retry
-                       orphaned turns); throttled off worker claim polls
-    repositories.py / db.py  SQLite access + migrations
 plugin/               Manifests + dashboard FastAPI adapter
-skills/hermes-crew/   The crew-collaboration agent skill
+skills/hermes-channels/   The channel-collaboration agent skill
 scripts/              build.mjs, install.py, verify-dist.mjs, package.mjs
 ```
 
@@ -66,7 +60,7 @@ scripts/              build.mjs, install.py, verify-dist.mjs, package.mjs
 
 **Hermes Desktop** loads `plugin.js` as native ESM with `react` and
 `@hermes/plugin-sdk` provided by the host. The host ships **no utility CSS for
-plugins**, so the build compiles a scoped stylesheet (`.hermes-crew-desktop`)
+plugins**, so the build compiles a scoped stylesheet (`.hermes-channels-desktop`)
 from the same sources and **inlines it into the bundle**; the plugin injects it
 on registration. Colors bridge to host theme tokens (`--background`,
 `--foreground`, `--ui-*`), so Crew follows the active Desktop theme live. The
@@ -75,7 +69,7 @@ derived from the host foreground via `color-mix`.
 
 **The web dashboard** loads an IIFE bundle whose `react` imports are shimmed to
 the host-provided SDK React. Its stylesheet is scoped to
-`.hermes-crew-dashboard` and defines a self-contained neutral palette (light
+`.hermes-channels-dashboard` and defines a self-contained neutral palette (light
 and dark) — host themes contribute only the accent color. This is deliberate:
 some Hermes themes are monochrome, and inheriting their full palette destroys
 text hierarchy. Light/dark is chosen by measuring the host background's
@@ -84,7 +78,7 @@ luminance, re-checked via `MutationObserver` on theme switches.
 **Container queries everywhere.** Hosts wrap the plugin in variable chrome
 (sidebars, file panels), so viewport breakpoints lie. Every responsive layout
 in Crew (`@2xl:`/`@3xl:`/`@4xl:`/`@5xl:` variants) measures the plugin's own
-container. The Agent Lab grid, channel rails, and the composer each define
+container. The Bot Management grid, channel rails, and the composer each define
 their own container context.
 
 ## Message and turn flow
@@ -99,7 +93,7 @@ their own container context.
    real Hermes gateway session, submits the bounded context prompt built by
    `context_builder.py`, and streams gateway events back as journal events.
 3. On completion the agent's final text is parsed by `intent.py`: visible prose
-   plus a hidden **intent envelope** (`<!-- hermes-crew:intent {...} -->`).
+   plus a hidden **intent envelope** (`[[hermes-channels:intent {...}]]`).
    The envelope's `placement` decides where the answer lands (follow the
    trigger / thread / channel); its intent and recipients feed the router for
    agent-to-agent follow-ups.
@@ -122,21 +116,22 @@ session view in both hosts: the dashboard deep-links
 `/chat?resume=<storedSessionId>`, Hermes Desktop routes `/<storedSessionId>`
 (its router resolves any single-segment non-core path as a session). The
 per-turn menu also offers the in-Crew **session console** — transcript read by
-the backend from Hermes' own session store (`$HERMES_HOME/state.db`,
-read-only), live continuation over the gateway (`session.resume` →
+the backend from Hermes' own session store (`$HERMES_HOME/profiles/<bot>/state.db`
+for bot turns; the default profile uses `$HERMES_HOME/state.db`, read-only),
+live continuation over the gateway (`session.resume` →
 `prompt.submit`, `message.delta`/`message.complete` events,
 `session.interrupt` to stop) — for working without leaving the workspace.
 
 Host-detection warning: never identify the host by sniffing SDK globals such
 as `__HERMES_PLUGIN_SDK__` — Hermes Desktop's plugin loader also assigns them
 to `globalThis`, timing-dependent on plugin load order. Crew's dashboard entry
-sets `window.__HERMES_CREW_HOST__ = 'dashboard'` and everything keys off that.
+sets `window.__HERMES_CHANNELS_HOST__ = 'dashboard'` and everything keys off that.
 
-The transcript endpoint couples to two tables of Hermes' `state.db`
+The transcript endpoint couples to two tables of each profile's `state.db`
 (`sessions{id,title,model}`, `messages{session_id,role,content,timestamp}`).
 If that schema moves, `GET /sessions/{id}/transcript` is the only touchpoint.
 
-## Data model (crew.db)
+## Data model (channels.db)
 
 Channels, messages (threads via `root_message_id`), channel members with
 activation policies, turns (with causal trigger/result links and session ids),

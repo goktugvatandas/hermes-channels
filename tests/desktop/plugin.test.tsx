@@ -1,7 +1,6 @@
 import {
   PALETTE_AREA,
   ROUTES_AREA,
-  SIDEBAR_NAV_AREA,
   host,
   type PluginContribution,
   type PluginStorage,
@@ -33,8 +32,8 @@ function memoryStorage(): PluginStorage {
   }
 }
 
-describe('Hermes Crew plugin registration', () => {
-  it('starts dynamic channel navigation alongside the static Crew surface', async () => {
+describe('Hermes Channels plugin registration', () => {
+  it('starts dynamic channel navigation alongside the Channels pane', async () => {
     const contributions = new Map<string, PluginContribution>()
     const register = vi.fn((item: PluginContribution) => {
       contributions.set(item.id, item)
@@ -60,29 +59,22 @@ describe('Hermes Crew plugin registration', () => {
     const navigate = vi.spyOn(host, 'navigate')
 
     plugin.register(ctx as never)
-    await vi.waitFor(() => expect([...contributions.values()]).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        area: SIDEBAR_NAV_AREA,
-        data: expect.objectContaining({ label: 'general' }),
-      }),
-    ])))
+    await vi.waitFor(() => expect([...contributions.keys()]).toEqual(
+      expect.arrayContaining(['channel-route-general-id']),
+    ))
 
     expect([...contributions.values()]).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'page', area: ROUTES_AREA, data: { path: '/crew' } }),
-      expect.objectContaining({
-        id: 'nav',
-        area: SIDEBAR_NAV_AREA,
-        data: expect.objectContaining({ label: 'Crew', path: '/crew' }),
-      }),
+      expect.objectContaining({ id: 'page', area: ROUTES_AREA, data: { path: '/channels' } }),
+      expect.objectContaining({ id: 'pane', area: 'panes', title: 'Channels' }),
       expect.objectContaining({ id: 'open', area: PALETTE_AREA }),
     ]))
     const palette = contributions.get('open')?.data as { run?: () => void }
     palette.run?.()
-    expect(navigate).toHaveBeenCalledWith('/crew')
-    expect(plugin.id).toBe('hermes-crew')
+    expect(navigate).toHaveBeenCalledWith('/channels')
+    expect(plugin.id).toBe('hermes-channels')
     expect(plugin.defaultEnabled).toBe(false)
 
     cleanups.forEach((cleanup) => cleanup())
-    expect([...contributions.values()].some((item) => item.id.includes('channel-nav'))).toBe(false)
+    expect([...contributions.values()].some((item) => item.id.includes('channel-route'))).toBe(false)
   })
 })

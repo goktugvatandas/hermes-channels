@@ -13,18 +13,32 @@ interface ChannelViewProps {
   channel: CrewChannel
   profiles: HermesProfile[]
   messageRevision: number
+  membershipRevision?: number
   onOpenThread(message: CrewMessage): void
   uiSnapshot?: ChannelUiSnapshot
   onUiSnapshot?(patch: Partial<ChannelUiSnapshot>): void
   events?: EventFrame[]
   onOpenDetails(): void
-  onNavigate?(view: 'home' | 'channels' | 'workshop' | 'search' | 'profile'): void
+  onNavigate?(view: 'home' | 'channels' | 'workshop' | 'search' | 'profile' | 'settings'): void
 }
 
-export function ChannelView({ api, channel, profiles, messageRevision, onOpenThread, onOpenDetails, uiSnapshot, onUiSnapshot, events = [], onNavigate }: ChannelViewProps) {
+export function ChannelView({ api, channel, profiles, messageRevision, membershipRevision = 0, onOpenThread, onOpenDetails, uiSnapshot, onUiSnapshot, events = [], onNavigate }: ChannelViewProps) {
   const [messages, setMessages] = useState<CrewMessage[]>([])
   const [deliveryById, setDeliveryById] = useState<Record<string, DeliveryState>>({})
   const [pendingTurnIds, setPendingTurnIds] = useState<string[]>([])
+  const [memberIds, setMemberIds] = useState<string[]>([])
+
+  useEffect(() => {
+    let current = true
+    void api.listChannelMembers(channel.id)
+      .then((members) => {
+        if (current) setMemberIds(members.map((member) => member.profileId))
+      })
+      .catch(() => {
+        // The chip cluster stays empty until a later render succeeds.
+      })
+    return () => { current = false }
+  }, [api, channel.id, membershipRevision])
   useEffect(() => {
     let current = true
     void api.listMessages(channel.id).then((items) => {
@@ -63,6 +77,10 @@ export function ChannelView({ api, channel, profiles, messageRevision, onOpenThr
   const completionProfile = latestCompletion && typeof latestCompletion.payload.profileId === 'string'
     ? profiles.find((profile) => profile.name === latestCompletion.payload.profileId)?.name || latestCompletion.payload.profileId
     : null
+  const channelProfiles = useMemo(
+    () => profiles.filter((profile) => memberIds.includes(profile.name)),
+    [memberIds, profiles],
+  )
 
   function pending(message: CrewMessage) {
     setMessages((current) => [...current.filter((item) => item.id !== message.id), message])
@@ -85,9 +103,9 @@ export function ChannelView({ api, channel, profiles, messageRevision, onOpenThr
 
   return (
     <section aria-label={`#${channel.name}`} className="flex min-h-0 flex-col">
-      <ChannelHeader channel={channel} onOpenDetails={onOpenDetails} profiles={profiles} />
+      <ChannelHeader channel={channel} memberIds={memberIds} onOpenDetails={onOpenDetails} />
       <MessageList deliveryById={deliveryById} initialScrollTop={uiSnapshot?.scrollTop} key={channel.id} messages={messages} onReply={onOpenThread} onScrollTop={(scrollTop) => onUiSnapshot?.({ scrollTop })} pendingTurns={pendingTurns} profiles={profiles} turnByMessageId={turnByMessageId} />
-      <CrewComposer api={api} channelId={channel.id} onFailed={failed} onNavigate={onNavigate} onPending={pending} onSent={sent} onValueChange={(draft) => onUiSnapshot?.({ draft })} profiles={profiles} value={uiSnapshot?.draft} />
+      <CrewComposer api={api} channelId={channel.id} onFailed={failed} onNavigate={onNavigate} onPending={pending} onSent={sent} onValueChange={(draft) => onUiSnapshot?.({ draft })} profiles={channelProfiles} value={uiSnapshot?.draft} />
       <p aria-live="polite" className="sr-only" role="status">{completionProfile ? `${completionProfile} responded` : ''}</p>
     </section>
   )

@@ -29,7 +29,7 @@ def test_install_is_idempotent_and_preserves_owner_data(tmp_path):
     member.mkdir(parents=True)
     sentinel = member / "SOUL.md"
     sentinel.write_text("Atlas", encoding="utf-8")
-    data = home / "crew" / "crew.db"
+    data = home / "channels" / "channels.db"
     data.parent.mkdir()
     data.write_bytes(b"existing-data")
 
@@ -38,17 +38,33 @@ def test_install_is_idempotent_and_preserves_owner_data(tmp_path):
 
     assert "Restart or reload Hermes Desktop" in first.stdout
     assert second.returncode == 0
-    assert (home / "desktop-plugins" / "hermes-crew" / "plugin.js").is_file()
-    assert (home / "plugins" / "hermes-crew" / "dashboard" / "plugin_api.py").is_file()
-    assert (home / "plugins" / "hermes-crew" / "dashboard" / "dist" / "index.js").is_file()
-    assert (home / "plugins" / "hermes-crew" / "dashboard" / "hermes_crew_backend" / "api.py").is_file()
+    assert (home / "desktop-plugins" / "hermes-channels" / "plugin.js").is_file()
+    assert (home / "plugins" / "hermes-channels" / "dashboard" / "plugin_api.py").is_file()
+    assert (home / "plugins" / "hermes-channels" / "dashboard" / "dist" / "index.js").is_file()
+    assert (home / "plugins" / "hermes-channels" / "dashboard" / "hermes_channels_backend" / "api.py").is_file()
     config = (home / "config.yaml").read_text(encoding="utf-8")
     assert config.count("- existing") == 1
-    assert config.count("- hermes-crew") == 1
+    assert config.count("- hermes-channels") == 1
     assert data.read_bytes() == b"existing-data"
     assert sentinel.read_text(encoding="utf-8") == "Atlas"
 
     _run(home, "--uninstall")
-    assert not (home / "desktop-plugins" / "hermes-crew").exists()
-    assert not (home / "plugins" / "hermes-crew").exists()
+    assert not (home / "desktop-plugins" / "hermes-channels").exists()
+    assert not (home / "plugins" / "hermes-channels").exists()
     assert data.read_bytes() == b"existing-data"
+    assert "hermes-channels" not in (home / "config.yaml").read_text(encoding="utf-8")
+
+
+def test_install_migrates_flow_style_legacy_enablement(tmp_path):
+    home = tmp_path / "owner"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "plugins: {enabled: [hermes-crew, existing]}\n", encoding="utf-8"
+    )
+
+    _run(home)
+
+    config = (home / "config.yaml").read_text(encoding="utf-8")
+    assert "hermes-crew" not in config
+    assert "- existing" in config
+    assert "- hermes-channels" in config

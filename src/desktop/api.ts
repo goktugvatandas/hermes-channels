@@ -2,7 +2,7 @@ import type { PluginRest, PluginRestOptions } from '@hermes/plugin-sdk'
 
 import type {
   AvatarGenerateOptions,
-  CrewSchedule,
+  ChannelSections,
   CrewChannel,
   CrewMember,
   CrewMessage,
@@ -17,7 +17,6 @@ import type {
   SkillState,
   RoutingRulesConfig,
   SearchResult,
-  StewardSettings,
   UserIdentity,
 } from './types'
 
@@ -152,44 +151,20 @@ export class CrewApi {
     })
   }
 
+  getChannelSections(): Promise<ChannelSections> {
+    return this.request('/channel-sections')
+  }
+
+  putChannelSections(body: ChannelSections): Promise<ChannelSections> {
+    return this.mutate('/channel-sections', 'PUT', body)
+  }
+
   getRoutingDefaults(): Promise<RoutingRulesConfig> {
     return this.request('/routing-defaults')
   }
 
   updateRoutingDefaults(body: Partial<RoutingRulesConfig>): Promise<RoutingRulesConfig> {
     return this.mutate('/routing-defaults', 'PUT', body)
-  }
-
-  listSchedules(): Promise<CrewSchedule[]> {
-    return this.request('/schedules')
-  }
-
-  createSchedule(body: { name: string; schedule: string; channelId: string; content: string; mentions: string[] }): Promise<CrewSchedule> {
-    return this.mutate('/schedules', 'POST', body)
-  }
-
-  deleteSchedule(id: string): Promise<{ ok: boolean }> {
-    return this.mutate(`/schedules/${encodeURIComponent(id)}`, 'DELETE')
-  }
-
-  setSchedulePaused(id: string, paused: boolean): Promise<CrewSchedule> {
-    return this.mutate(`/schedules/${encodeURIComponent(id)}/${paused ? 'pause' : 'resume'}`, 'POST')
-  }
-
-  triggerSchedule(id: string): Promise<CrewSchedule> {
-    return this.mutate(`/schedules/${encodeURIComponent(id)}/trigger`, 'POST')
-  }
-
-  getSteward(): Promise<StewardSettings> {
-    return this.request('/steward')
-  }
-
-  updateSteward(body: Partial<StewardSettings>): Promise<StewardSettings> {
-    return this.mutate('/steward', 'PUT', body)
-  }
-
-  runStewardSweep(): Promise<{ replanned: string[]; retried: string[]; judged: string[]; blocked: string[] }> {
-    return this.mutate('/steward/sweep', 'POST')
   }
 
   getMe(): Promise<UserIdentity> {
@@ -210,6 +185,13 @@ export class CrewApi {
 
   listChannelMembers(channelId: string): Promise<ChannelMember[]> {
     return this.request(`/channels/${encodeURIComponent(channelId)}/members`)
+  }
+
+  removeChannelMember(channelId: string, profileId: string): Promise<{ ok: boolean }> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(profileId)}`,
+      'DELETE',
+    )
   }
 
   updateChannelMember(

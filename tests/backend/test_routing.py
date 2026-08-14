@@ -1,6 +1,6 @@
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.repositories import CrewRepository
-from hermes_crew_backend.routing import Router
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.routing import Router
 
 
 def _intent(intent: str, recipients: list[str] | None = None) -> dict:
@@ -17,7 +17,7 @@ def _intent(intent: str, recipients: list[str] | None = None) -> dict:
 
 def test_agent_inform_does_not_wake_default_or_always_responders(tmp_path):
     """An announcement from one agent must terminate unless it names a reply."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas", activation_policy="always")
     repo.add_member(channel.id, "critic", activation_policy="always")
@@ -34,7 +34,7 @@ def test_agent_inform_does_not_wake_default_or_always_responders(tmp_path):
 
 def test_review_wakes_named_reviewer_once(tmp_path):
     """A valid review request must schedule exactly the named member."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("development")
     repo.add_member(channel.id, "critic")
     message = repo.append_message(
@@ -52,21 +52,36 @@ def test_review_wakes_named_reviewer_once(tmp_path):
     ]
 
 
-def test_human_routing_preserves_precedence_and_collapses_duplicates(tmp_path):
-    """Mention, default, and always rules must produce one turn per profile."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+def test_human_routing_directs_mentions_and_collapses_duplicates(tmp_path):
+    """Directed messages wake exactly the mentioned members, one turn each;
+    untagged messages fall back to the default responder + always members."""
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general", default_responder_profile="atlas")
     repo.add_member(channel.id, "atlas", activation_policy="always")
     repo.add_member(channel.id, "scout", activation_policy="mentioned")
     repo.add_member(channel.id, "critic", activation_policy="always")
-    message = repo.append_message(
+
+    directed = repo.append_message(
         channel.id, "user", "@scout investigate", mentions=["scout", "atlas"]
     )
+    turns = Router(repo).plan(directed.id)
+    assert [turn.profile_id for turn in turns] == ["scout", "atlas"]
+    assert turns[0].triggers == ("mention",)
 
-    turns = Router(repo).plan(message.id)
+    untagged = repo.append_message(channel.id, "user", "morning status?")
+    turns = Router(repo).plan(untagged.id)
+    assert sorted(turn.profile_id for turn in turns) == ["atlas", "critic"]
 
-    assert [turn.profile_id for turn in turns] == ["scout", "atlas", "critic"]
-    assert turns[1].triggers == ("mention", "default", "always")
+
+def test_unknown_directed_mention_does_not_wake_fallback_members(tmp_path):
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_responder_profile="atlas")
+    repo.add_member(channel.id, "atlas", activation_policy="always")
+    message = repo.append_message(
+        channel.id, "user", "@removed please answer", mentions=["removed"]
+    )
+
+    assert Router(repo).plan(message.id) == []
 
 
 def _link_turn(repo: CrewRepository, trigger_id: str, result_id: str, profile: str) -> None:
@@ -95,7 +110,7 @@ def _link_turn(repo: CrewRepository, trigger_id: str, result_id: str, profile: s
 
 def test_repeated_directed_pair_is_blocked_and_journaled(tmp_path):
     """A second Atlas-to-Critic transition in one chain must stop the loop."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("development", routing_rules={"max_depth": 10})
     repo.add_member(channel.id, "atlas")
     repo.add_member(channel.id, "critic")
@@ -136,7 +151,7 @@ def test_question_schedules_its_named_recipient(tmp_path):
     """The collaboration skill promises that asking someone by name wakes
     them; `question` must be a scheduling intent (regression: it was not,
     so agent questions silently got no answer)."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     repo.add_member(channel.id, "critic")
     message = repo.append_message(
@@ -158,7 +173,7 @@ def test_agent_text_mentions_route_when_envelope_names_nobody(tmp_path):
     """Models write "@freya please…" in prose with an empty envelope; text
     mentions must route (with all loop caps still applying), while terminal
     intents stay silent even with mentions."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     repo.add_member(channel.id, "freya")
     repo.add_member(channel.id, "thoth")
@@ -190,7 +205,7 @@ def test_agent_text_mentions_route_when_envelope_names_nobody(tmp_path):
 def test_result_with_named_recipient_wakes_the_collector(tmp_path):
     """Delegates finishing with `result` addressed to the delegator wake her
     once to consolidate; recipient-less results stay terminal."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     repo.add_member(channel.id, "athena")
     delivered = repo.append_message(
@@ -225,7 +240,7 @@ def test_result_with_named_recipient_wakes_the_collector(tmp_path):
 
 def test_workspace_routing_defaults_apply_and_channel_overrides_win(tmp_path):
     """Budget layering: built-ins < workspace defaults < channel overrides."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     repo.set_setting("routing_defaults", {"max_automated_turns": 0})
     plain = repo.create_channel("plain")
     repo.add_member(plain.id, "freya")

@@ -1,11 +1,11 @@
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.models import ProjectRef
-from hermes_crew_backend.project_context import (
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.models import ProjectRef
+from hermes_channels_backend.project_context import (
     project_key,
     resolve_project_context,
     resolve_scope_id,
 )
-from hermes_crew_backend.repositories import CrewRepository
+from hermes_channels_backend.repositories import CrewRepository
 
 
 PROJECT_WEB = ProjectRef(
@@ -19,7 +19,7 @@ PROJECT_WEB = ProjectRef(
 
 def test_message_project_becomes_thread_project_without_mutating_channel(tmp_path):
     """An ad-hoc project must stay on its root while later mainline work is global."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel(
         "general", default_project=ProjectRef(mode="global")
     )
@@ -39,7 +39,7 @@ def test_message_project_becomes_thread_project_without_mutating_channel(tmp_pat
 
 def test_explicit_global_overrides_channel_project(tmp_path):
     """The user must be able to opt one message out of a project channel."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("web", default_project=PROJECT_WEB)
     message = repo.append_message(
         channel.id,
@@ -54,7 +54,7 @@ def test_explicit_global_overrides_channel_project(tmp_path):
 
 def test_target_member_default_is_used_after_inherited_channel_context(tmp_path):
     """An unassigned channel may fall back to the selected agent's own project."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     repo.add_member(channel.id, "atlas", default_project=PROJECT_WEB)
     message = repo.append_message(

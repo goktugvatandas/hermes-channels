@@ -1,11 +1,11 @@
 {
-  "name": "hermes-crew",
-  "label": "Hermes Crew",
-  "version": "0.1.0",
+  "name": "hermes-channels",
+  "label": "Hermes Channels",
+  "version": "0.2.0",
   "description": "Persistent Hermes profiles working together in local channels.",
   "icon": "MessageSquare",
   "tab": {
-    "path": "/hermes-crew",
+    "path": "/hermes-channels",
     "position": "after:channels"
   },
   "entry": "dist/index.js",

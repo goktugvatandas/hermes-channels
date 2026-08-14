@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { CrewApi } from '../api'
 import { generateMythicalName } from '../name-generator'
+import { mirrorAvatarToBotMode } from '../bot-mode-bridge'
 import type { StudioSave } from '../studio-save-coordinator'
 import type { AvatarGenerateOptions, CrewMember, HermesProfile, ImageGenerationStatus } from '../types'
 import { AvatarEditor } from './avatar-editor'
@@ -28,14 +29,22 @@ export function ProfileEditor({ api, profile, member, onMember, save }: { api: C
 
   function saveAvatar(patch: { avatar?: string | null; color?: string | null }) {
     void save(`${profile.name}:avatar`, () => api.updateMember(profile.name, patch))
-      .then((result) => { if (result.current) onMember(result.value) })
+      .then((result) => {
+        if (!result.current) return
+        onMember(result.value)
+        if ('avatar' in patch) mirrorAvatarToBotMode(profile.name, result.value.avatar)
+      })
       .catch(() => undefined)
   }
 
   function generateAvatar(options: AvatarGenerateOptions) {
     setGenerating(true)
     void save(`${profile.name}:avatar`, () => api.generateMemberAvatar(profile.name, options))
-      .then((result) => { if (result.current) onMember(result.value) })
+      .then((result) => {
+        if (!result.current) return
+        onMember(result.value)
+        mirrorAvatarToBotMode(profile.name, result.value.avatar)
+      })
       .catch(() => undefined)
       .finally(() => setGenerating(false))
   }
@@ -82,6 +91,7 @@ export function ProfileEditor({ api, profile, member, onMember, save }: { api: C
       <section className="grid gap-3">
         <div><h3 className="text-sm font-semibold">Avatar</h3><p className="mt-1 text-xs text-(--ui-text-tertiary)">Pick a color, upload an image{generation ? ', or let Hermes paint one from this profile' : ''}.</p></div>
         <AvatarEditor
+          profileId={profile.name}
           avatar={member.avatar}
           canGenerate={Boolean(generation)}
           color={member.color}

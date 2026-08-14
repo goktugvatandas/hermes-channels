@@ -3,7 +3,8 @@ import { MemberAvatar } from '../presentation'
 
 interface ChannelHeaderProps {
   channel: CrewChannel
-  profiles: HermesProfile[]
+  /** Actual channel membership (profile ids), not the global roster. */
+  memberIds: string[]
   onOpenDetails(): void
 }
 
@@ -11,7 +12,7 @@ function titleCase(value: string): string {
   return value ? `${value[0].toUpperCase()}${value.slice(1)}` : value
 }
 
-export function ChannelHeader({ channel, profiles, onOpenDetails }: ChannelHeaderProps) {
+export function ChannelHeader({ channel, memberIds, onOpenDetails }: ChannelHeaderProps) {
   const project = channel.defaultProject?.mode === 'project'
     ? channel.defaultProject.label || channel.defaultProject.projectId
     : 'Global'
@@ -23,7 +24,7 @@ export function ChannelHeader({ channel, profiles, onOpenDetails }: ChannelHeade
           <h2 className="truncate text-[15px] font-semibold">#{channel.name}</h2>
           <span className="shrink-0 rounded-full bg-(--ui-surface-secondary) px-2 py-0.5 text-[11px] text-(--ui-text-secondary)">{project}</span>
         </div>
-        <p className="truncate text-xs text-(--ui-text-secondary)">{channel.topic || channel.purpose || 'Shared crew channel'}</p>
+        <p className="truncate text-xs text-(--ui-text-secondary)">{channel.topic || channel.purpose || 'Shared channel'}</p>
       </div>
       <button
         aria-label="Channel details"
@@ -32,11 +33,11 @@ export function ChannelHeader({ channel, profiles, onOpenDetails }: ChannelHeade
         type="button"
       >
         <span aria-hidden="true" className="flex -space-x-2">
-          {profiles.slice(0, 4).map((profile) => (
-            <span className="rounded-full ring-2 ring-(--color-background)" key={profile.name}><MemberAvatar profileId={profile.name} size="sm" /></span>
+          {memberIds.slice(0, 4).map((profileId) => (
+            <span className="rounded-full ring-2 ring-(--color-background)" key={profileId}><MemberAvatar profileId={profileId} size="sm" /></span>
           ))}
         </span>
-        <span className="text-xs font-medium text-(--ui-text-secondary)">{profiles.length}</span>
+        <span className="text-xs font-medium text-(--ui-text-secondary)">{memberIds.length}</span>
       </button>
     </header>
   )

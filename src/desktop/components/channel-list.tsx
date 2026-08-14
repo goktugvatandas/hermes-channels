@@ -50,7 +50,7 @@ export function ChannelList({
   }
 
   return (
-    <nav aria-label="Crew channels" className="flex min-h-0 flex-col gap-2 p-3">
+    <nav aria-label="Channels" className="flex min-h-0 flex-col gap-2 p-3">
       <div className="flex items-center justify-between px-1">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-(--ui-text-tertiary)">
           Channels

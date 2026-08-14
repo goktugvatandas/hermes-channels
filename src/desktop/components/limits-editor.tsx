@@ -94,9 +94,8 @@ export function LimitsEditor({ api }: { api: CrewApi }) {
       <div>
         <h3 className="text-sm font-semibold">Routing limits</h3>
         <p className="mt-1 text-xs leading-5 text-(--ui-text-tertiary)">
-          Loop-safety budgets for agent-to-agent work. When a chain hits a
-          limit it pauses until a human posts (which resets the budget) — the
-          Steward reports budget-blocked wakes in its sweeps.
+          Loop-safety budgets for bot-to-bot work. When a chain hits a
+          limit it pauses until a human posts, which resets the budget.
         </p>
       </div>
       <div className="grid gap-3 rounded-xl border border-(--ui-stroke-secondary) p-4 @container">

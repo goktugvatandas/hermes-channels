@@ -11,7 +11,7 @@ interface ProfileViewProps {
   onIdentityChange(identity: UserIdentity): void
 }
 
-/** The human user's profile: how you appear in Crew channels. */
+/** The human user's profile: how you appear in channels. */
 export function ProfileView({ api, identity, onIdentityChange }: ProfileViewProps) {
   const [displayName, setDisplayName] = useState(identity.displayName)
   const [avatar, setAvatar] = useState(identity.avatar)
@@ -82,7 +82,7 @@ export function ProfileView({ api, identity, onIdentityChange }: ProfileViewProp
       <section aria-label="Your profile" className="mx-auto grid w-full max-w-xl content-start gap-6 px-6 py-8">
         <div>
           <h2 className="text-lg font-semibold">Your profile</h2>
-          <p className="mt-1 text-sm text-(--ui-text-secondary)">How you appear in Crew channels.</p>
+          <p className="mt-1 text-sm text-(--ui-text-secondary)">How you appear in channels.</p>
         </div>
         <label className="grid gap-1.5 text-xs font-medium text-(--ui-text-secondary)">Display name<input className="rounded-lg border border-(--ui-stroke-secondary) bg-transparent px-3 py-2 text-sm font-normal text-foreground" onChange={(event) => { setDisplayName(event.target.value); setDirty(true) }} value={displayName} /></label>
         <div className="grid gap-2">

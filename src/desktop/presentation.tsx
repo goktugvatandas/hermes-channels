@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 
 import { Avatar } from './components/avatar'
+import { BotAvatar } from './components/shape-avatar'
 import { displayName } from './conversation-model'
 import type { CrewMember, UserIdentity } from './types'
 
@@ -36,16 +37,17 @@ export function mentionHandle(presentation: Presentation, profileId: string): st
   return handle || profileId
 }
 
-/** An agent avatar that honors stored customization (image or color). */
+/** A bot avatar: stored image, else the Bot Mode shape face. */
 export function MemberAvatar({ profileId, size = 'md' }: { profileId: string; size?: 'sm' | 'md' | 'lg' }) {
   const presentation = usePresentation()
   const member = presentation.members[profileId]
   return (
-    <Avatar
+    <BotAvatar
+      avatar={member?.avatar || null}
       color={member?.color || null}
       name={presentedName(presentation, profileId)}
+      profileId={profileId}
       size={size}
-      src={member?.avatar || null}
     />
   )
 }

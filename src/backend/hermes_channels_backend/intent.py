@@ -1,4 +1,4 @@
-"""Parsing for the Hermes Crew response envelope markers."""
+"""Parsing for the Hermes Channels response envelope markers."""
 
 import json
 import re
@@ -8,8 +8,10 @@ from pydantic import ValidationError
 from .models import IntentEnvelope
 
 
-_MARKER = re.compile(r"(?:<!--|\[\[)\s*hermes-crew:intent\s+(\{.*?\})\s*(?:-->|\]\])", re.DOTALL)
-_ANY_INTENT_COMMENT = re.compile(r"(?:<!--\s*hermes-crew:intent\b[^\r\n]*?-->|\[\[\s*hermes-crew:intent\b[^\r\n]*?\]\])")
+_MARKER = re.compile(r"(?:<!--|\[\[)\s*hermes-(?:channels|crew):intent\s+(\{.*?\})\s*(?:-->|\]\])", re.DOTALL)
+_ANY_INTENT_COMMENT = re.compile(r"(?:<!--\s*hermes-(?:channels|crew):intent\b[^\r\n]*?-->|\[\[\s*hermes-(?:channels|crew):intent\b[^\r\n]*?\]\])")
+# Tolerate truncated closers ("}]"): a line that opens as a marker is one.
+_SLOPPY_MARKER_LINE = re.compile(r"^[ \t]*(?:<!--|\[\[)\s*hermes-(?:channels|crew):intent\b[^\r\n]*$", re.MULTILINE)
 _MAX_PAYLOAD_BYTES = 4096
 
 # Intents that schedule work, strongest first: a merged envelope keeps the
@@ -18,7 +20,9 @@ _SCHEDULING_INTENTS = ("handoff", "review_request", "reply_required", "question"
 
 
 def _visible_text(text: str) -> str:
-    return _ANY_INTENT_COMMENT.sub("", text).strip()
+    return _SLOPPY_MARKER_LINE.sub(
+        "", _ANY_INTENT_COMMENT.sub("", _MARKER.sub("", text))
+    ).strip()
 
 
 def _merge(envelopes: list[IntentEnvelope]) -> IntentEnvelope:

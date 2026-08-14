@@ -1,11 +1,11 @@
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.models import ProjectRef
-from hermes_crew_backend.repositories import CrewRepository
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.models import ProjectRef
+from hermes_channels_backend.repositories import CrewRepository
 
 
 def test_duplicate_message_command_returns_the_original_row(tmp_path):
     """A retried client command must not append a second message."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
 
     first = repo.append_message(
@@ -29,7 +29,7 @@ def test_duplicate_message_command_returns_the_original_row(tmp_path):
 
 def test_thread_query_does_not_leak_other_channel_messages(tmp_path):
     """Opening a thread must return only its root and descendants."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     root = repo.append_message(channel.id, "user", "root")
     reply = repo.append_message(
@@ -42,7 +42,7 @@ def test_thread_query_does_not_leak_other_channel_messages(tmp_path):
 
 def test_member_default_project_is_persisted_per_profile(tmp_path):
     """Adding another profile must not overwrite an existing member default."""
-    repo = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repo.create_channel("general")
     atlas_project = ProjectRef(
         mode="project",

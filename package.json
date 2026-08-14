@@ -1,9 +1,17 @@
 {
-  "name": "hermes-crew",
-  "version": "0.1.0",
+  "name": "hermes-channels",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Slack-style channels where a crew of persistent Hermes agents work together \u2014 a plugin for Hermes Agent (Desktop and web dashboard).",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/goktugvatandas/hermes-channels.git"
+  },
+  "homepage": "https://github.com/goktugvatandas/hermes-channels#readme",
+  "bugs": {
+    "url": "https://github.com/goktugvatandas/hermes-channels/issues"
+  },
   "engines": {
     "node": ">=22.22.0"
   },

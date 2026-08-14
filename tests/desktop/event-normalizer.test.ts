@@ -54,7 +54,7 @@ describe('gateway event normalization', () => {
 describe('hidden intent marker parsing', () => {
   it('returns visible prose and a valid final routing envelope', () => {
     const output = parseIntentMarker(
-      'Ready.\n<!-- hermes-crew:intent {"schemaVersion":1,"intent":"review_request","recipients":["critic"],"replyExpected":true,"replyBudget":1} -->',
+      'Ready.\n<!-- hermes-channels:intent {"schemaVersion":1,"intent":"review_request","recipients":["critic"],"replyExpected":true,"replyBudget":1} -->',
     )
 
     expect(output).toEqual({
@@ -76,7 +76,7 @@ describe('hidden intent marker parsing', () => {
     // Models emit one marker per delegation plus a wrap-up "inform"; the old
     // take-none rule silently dropped every real handoff.
     const output = parseIntentMarker(
-      'Draft.\n<!-- hermes-crew:intent {"schemaVersion":1,"intent":"handoff","recipients":["atlas"],"replyExpected":true,"placement":"thread"} -->\nFinal.\n[[hermes-crew:intent {"schemaVersion":1,"intent":"inform","summary":"delegations sent"}]]',
+      'Draft.\n<!-- hermes-channels:intent {"schemaVersion":1,"intent":"handoff","recipients":["atlas"],"replyExpected":true,"placement":"thread"} -->\nFinal.\n[[hermes-channels:intent {"schemaVersion":1,"intent":"inform","summary":"delegations sent"}]]',
     )
 
     expect(output.visibleText).toBe('Draft.\n\nFinal.')

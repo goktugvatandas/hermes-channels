@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from hermes_crew_backend.models import DispatchClaim, IntentEnvelope, ProjectRef
+from hermes_channels_backend.models import DispatchClaim, IntentEnvelope, ProjectRef
 
 
 def test_reply_bearing_intent_requires_named_recipients():

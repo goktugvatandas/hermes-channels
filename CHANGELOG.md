@@ -1,20 +1,124 @@
 # Changelog
 
-## Unreleased — 2026-08-13
+## 0.2.0 — 2026-08-14
+
+The hermes-crew → **Hermes Channels** release: project renamed (installs
+migrate automatically), channels became a first-class Hermes platform via
+a standalone adapter, the desktop experience moved to a routed multi-page
+layout with a channels pane, and the whole tree went through a final
+review sweep. Timeline scrolling no longer fights the user: the saved
+scroll position restores once per channel open instead of re-applying on
+every render.
+
+**Review hardening (dual review: 8-angle + Codex).** The worker's finalize
+logic is a real state machine now — tool/thinking activity after a banked
+completion holds the turn open (complete → tool → final-complete no longer
+truncates), and quiet-before-completion only trips a long safety fallback.
+Channel section create-and-move is one atomic write. Profile-config
+enablement understands flow-style YAML (and installer + backend share one
+implementation). The platform adapter fixes: `CHANNELS_HOME_CHANNEL` seeds
+`chat_id` correctly, posts run the classifier like composer posts, the
+fresh-install probe passes, attachments error instead of silently dropping,
+threads pass through, and mention parsing uses the router's shared grammar.
+Worker sessions archive at every terminal transition (classification and
+reaped turns included) with a retryable backfill. Multi-line intent markers
+strip cleanly. Desktop search is reachable again (route + composer
+commands). The pane's unread total is live, "New bot" works when Bot
+Management is already open, Aether no longer overwrites user theme edits,
+and the shape picker follows bot switches. `install.py` migrates hermes-crew
+installs (bundles, config entry, workspace adoption, orphaned cron jobs).
+
+**Per-channel member management.** The channel details rail manages real
+membership: add bots, set activation policy inline, remove members (the
+default responder is protected). New `DELETE /channels/{id}/members/{profile}`
+endpoint; membership no longer shows the global profile list.
+
+
+**Bot Mode's shape avatars, everywhere.** The geometric bot faces (7 flat
+shapes + 5 platonic solids, same 40×40 geometry, colors, name-hash defaults,
+and idle blink) are ported into Channels: bots without an image avatar render
+the exact face Bot Mode shows — appearance read live from Bot Mode's meta
+when present. The avatar editor gains a Shapes picker whose picks persist as
+SVG data URLs, so they propagate to the asset store and appear identical in
+Bot Mode.
+
+**Pages, Settings, and a smarter pane.** The in-page tab switch is gone:
+Home, Bot Management, Profile, and the new **Settings** page (now home to
+routing Limits) are real routed pages, opened from the page header or the
+pane. The CHANNELS pane gained a bottom Settings button, right-click menus
+for channels (open, mark read, rename, move), sections, and bots, plus
+user-defined **sections** with drag-and-drop channel grouping (persisted
+workspace-wide via `/channel-sections`). Bots with no workspace avatar now
+pull the profile's stored avatar (shared with Bot Mode) automatically.
+
+**Steward and Schedules removed.** The experimental Steward automation
+agent and the cron-backed Schedules feature are gone (pages, endpoints,
+backend modules, and the scheduler/routing hooks that served them).
+Automation keeps exactly one page: **Limits**. Stalled chains now recover
+the manual way — a human message resets budgets and re-wakes mentions.
+
+**Tab-only navigation.** The session-sidebar presentation and its
+Appearance setting are gone: the CHANNELS pane (tab beside SESSIONS/BOTS) is
+now the single navigation surface. Channel routes and unread tracking are
+unchanged; `/ui-settings` endpoints were removed.
+
+**Project renamed: Hermes Crew → Hermes Channels.** The plugin id is now
+`hermes-channels`, the backend package `hermes_channels_backend`, the
+workspace database `$HERMES_HOME/channels/channels.db`, the platform
+registration `channels` (send targets `channels:<channel>`, cron
+`deliver=channels` via `CHANNELS_HOME_CHANNEL`), routes `/channels/...`, and
+Agent Lab is now **Bot Management** (agents → bots across the UI). The icon
+and Aether theme are unchanged. Old `hermes-crew:intent` markers still parse
+during migration; `scripts/install.py` removes the old bundles/config entry,
+adopts `$HERMES_HOME/crew/crew.db` as the Channels workspace when needed, and
+cleans orphaned Crew cron jobs. Internal code symbols keep the Crew prefix for
+now and will be renamed in the ongoing overhaul.
+
+Crew as a messaging platform:
+
+- **`register_platform("channels")`** — a gateway platform plugin (zero core
+  edits) making crew channels host-wide send targets: the agent
+  `send_message` tool, `hermes send --to channels:<channel>`, cron
+  `deliver=channels` (via `CHANNELS_HOME_CHANNEL`), the Channels settings page, and
+  the channel directory. Sends resolve channel ids/names out-of-process and
+  post through the normal Crew routing pipeline as user-authored messages.
+- **Unified plugin package**: `scripts/install.py --layout unified` ships the
+  desktop half inside `plugins/hermes-channels/desktop/` for desktop shells newer
+  than mid-2026 (default `standalone` layout unchanged for older shells).
+- CHANNELS-pane bot rows now open the bot's direct chat (resume latest, else
+  new chat, else session navigation — feature-detected per host), with an
+  Bot Management shortcut on hover.
+
+Session visibility & Bot Mode interop:
+
+- **Crew worker sessions are now internal**: created with the host's
+  internal session source and archived on turn completion (plus a one-time
+  backfill for existing workspaces), so they stay out of the session
+  sidebar, command palette, project trees, and Bot Mode's per-bot chat
+  previews — while remaining openable from Crew's activity views.
+- **Bot Mode interop**: agent avatars saved in Crew are mirrored to the
+  profile asset store (`profiles.set_asset`, feature-detected) so Bot Mode
+  shows the same identity; the CHANNELS-pane roster gets a direct-message button
+  where the host supports `newChat`.
+- Ships an **Aether** desktop theme (mint-on-midnight Crew branding, light
+  and dark palettes), installed into the host theme store and applied once
+  as the default skin.
+
+### Earlier in this cycle — 2026-08-13
 
 Schedules on Hermes cron:
 
-- **Agent Lab → Automation → Schedules**: recurring channel messages as real Hermes cron jobs — tokenless `no_agent` script jobs (generated under `$HERMES_HOME/scripts/`, cleaned up on delete) that post through normal Crew routing, so scheduled kickoffs mentioning agents start full relays. Presets plus raw cron/interval cadences, pause/resume/run-now/delete, jobs tagged `origin: hermes-crew` and visible on the host's own Cron page. Covered by an end-to-end test that executes a generated script against a real crew.db.
+- **Bot Management → Automation → Schedules**: recurring channel messages as real Hermes cron jobs — tokenless `no_agent` script jobs (generated under `$HERMES_HOME/scripts/`, cleaned up on delete) that post through normal Crew routing, so scheduled kickoffs mentioning agents start full relays. Presets plus raw cron/interval cadences, pause/resume/run-now/delete, jobs tagged `origin: hermes-channels` and visible on the host's own Cron page. Covered by an end-to-end test that executes a generated script against a real channels.db.
 
 The Steward (experimental):
 
 - A hidden, off-by-default automation agent that unblocks stalled lifecycles on a schedule: rule-based sweeps (no model calls) re-plan messages whose named recipients never got a turn and retry orphaned interrupted turns, all still subject to routing budgets. `GET/PUT /steward` for settings, `POST /steward/sweep` for a manual pass; sweeps ride the worker claim polls.
-- **Routing limits are configurable** in Agent Lab → Automation → Limits: workspace-default budgets (automation turns, chain depth, pair repeats, concurrency) with per-channel overrides, layered built-ins < workspace < channel. Each field explains what it caps and that a human message resets the budget.
-- Settings UI in **Agent Lab → Automation** (toggle, cadence, stall threshold, run-now), plus an **editable judgment model**: pick a cheap catalog model and ambiguous stalls (nothing named, nothing in flight) get one bounded judgment call per message — executed through the existing classification-turn worker path — whose verdict wakes members via the normal routing caps. Clearable back to rules-only.
+- **Routing limits are configurable** in Bot Management → Automation → Limits: workspace-default budgets (automation turns, chain depth, pair repeats, concurrency) with per-channel overrides, layered built-ins < workspace < channel. Each field explains what it caps and that a human message resets the budget.
+- Settings UI in **Bot Management → Automation** (toggle, cadence, stall threshold, run-now), plus an **editable judgment model**: pick a cheap catalog model and ambiguous stalls (nothing named, nothing in flight) get one bounded judgment call per message — executed through the existing classification-turn worker path — whose verdict wakes members via the normal routing caps. Clearable back to rules-only.
 
 Agent-to-agent relays actually relay (found live via a 5-agent, 4-provider demo; four stacked bugs each silently produced the same "default envelope" symptom):
 
-- **Plain-text intent markers.** The gateway sanitizes HTML comments out of message frames, so the comment-based contract never reached the worker; the marker is now `[[hermes-crew:intent {...}]]` (old form still parses).
+- **Plain-text intent markers.** The gateway sanitizes HTML comments out of message frames, so the comment-based contract never reached the worker; the marker is now `[[hermes-channels:intent {...}]]` (old form still parses).
 - **Completion waits for the whole reply.** Models send one reply as several assistant messages, with the envelope marker in a trailing short message; the worker used to complete on the first `message.complete`. It now banks messages and finalizes after six quiet seconds, joining the full text.
 - **Multiple markers merge** (recipients union, strongest scheduling intent, max budget, first explicit placement) instead of being discarded — models emit one marker per delegation plus a wrap-up.
 - **The envelope validator accepts `placement`.** The frontend key-allowlist predated the field the contract itself mandates, so even perfectly-formed envelopes were rejected wholesale.
@@ -25,7 +129,7 @@ Agent-to-agent relays actually relay (found live via a 5-agent, 4-provider demo;
 Cross-host recovery fix:
 
 - **Workers now heartbeat their turns.** The first stale-reap design treated journal frames as liveness — but reasoning models can stream nothing for minutes while thinking, so a healthy turn died at the three-minute mark (found live on the second demo run: last streaming frame 15:05:40, reaped 15:08:40). The gateway worker now POSTs `/turns/{id}/heartbeat` every 60s for each turn it drives, the reap keys on `MAX(journal activity, heartbeat)` with a five-minute window, and heartbeats on settled turns are refused. Covered by a silent-reasoning regression test.
-- **A booting backend no longer kills the other host's live turns.** Hermes Desktop's embedded server and the web dashboard share crew.db, and either one starting up used to blanket-interrupt every claimed/running turn — opening the dashboard mid-relay killed turns the Desktop worker was actively driving (found live: a 5-agent handoff demo died the moment a second surface loaded). Recovery is now stale-aware: in-flight turns are only reaped after three minutes of journal silence (streaming/tool events count as liveness), the reap also runs opportunistically from the claim poll so real orphans still get cleaned without a restart, and the single-host crash-restart semantics remain available via `stale_after_ms=0`. Covered by a cross-host regression test.
+- **A booting backend no longer kills the other host's live turns.** Hermes Desktop's embedded server and the web dashboard share channels.db, and either one starting up used to blanket-interrupt every claimed/running turn — opening the dashboard mid-relay killed turns the Desktop worker was actively driving (found live: a 5-agent handoff demo died the moment a second surface loaded). Recovery is now stale-aware: in-flight turns are only reaped after three minutes of journal silence (streaming/tool events count as liveness), the reap also runs opportunistically from the claim poll so real orphans still get cleaned without a restart, and the single-host crash-restart semantics remain available via `stale_after_ms=0`. Covered by a cross-host regression test.
 
 Branding:
 
@@ -36,7 +140,7 @@ Second code-quality sweep (four parallel reviewers; all confirmed findings appli
 - **Routing honors the skill's contract for questions.** `intent: "question"` with named recipients now schedules them (it silently scheduled no one), and the collaboration skill's intent table was corrected to match routing exactly (`inform`/`result`/`blocked` are informational).
 - **Avatar inputs are validated.** `PATCH /members/{id}` and `/me` reject non-`data:image/` avatars (a remote URL would have turned every roster render into a tracking beacon) and cap sizes; explicit nulls on non-nullable member fields are ignored instead of surfacing as 500s/409s; `/me/avatar/generate` re-reads identity after the slow generation so it can't revert a concurrent rename; the per-call image-model env override is fully serialized (a concurrent no-override generation could read the other request's model).
 - **Composer correctness.** A synchronous in-flight guard stops Enter key-repeat from posting duplicate messages (each carried a fresh idempotency key the server couldn't dedupe); mention resolution now token-scans with the same boundaries the popup and highlighter accept (`(@Name` and `@Name,` count) and builds no RegExp from names, so a profile named `team(` can't wedge the composer.
-- **Editors keep your edits.** The Agent Lab identity editor resets only when you switch profiles — previously any resolving save handed back a fresh member object and wiped in-progress SOUL/name edits, cancelling pending debounced saves. The Profile view preserves dirty fields across background refreshes and generation.
+- **Editors keep your edits.** The Bot Management identity editor resets only when you switch profiles — previously any resolving save handed back a fresh member object and wiped in-progress SOUL/name edits, cancelling pending debounced saves. The Profile view preserves dirty fields across background refreshes and generation.
 - **Event buffer is per-channel-fair** (newest 800 per channel instead of a global cap that evicted a quiet channel's backfilled history in the same merge that added it), and the events endpoint takes a `limit`. Thread resizing survives releases outside the window (`buttons===0` detection + `pointercancel` + unmount cleanup) and thread panes are keyed by root so switching threads can't leak the previous thread's messages or pending turns. Activity Stop/Retry failures re-enable the button and announce instead of dying silently.
 - **Idempotent writes take the write lock up front** (`BEGIN IMMEDIATE`) so a concurrent client retry dedupes instead of bouncing off the UNIQUE constraint as a 409, and migration 2's FTS backfill is guarded against replay after a crash between script and version marker. FTS search strips NUL bytes that crashed sqlite.
 - Dead code removed (`state.ts`, session-nav leftovers, `labelWithoutName`/`turn.label`, unused imports); README/ARCHITECTURE/CHANGELOG/skill brought back in line with shipped behavior (composer commands, native session navigation on both hosts, identity endpoints, settings table).
@@ -60,7 +164,7 @@ Avatars and identity:
 - **Mythological name generator.** A sparkle button next to the agent Display name rolls names that feel mythological — half curated (Athena, Freya, Amaterasu…), half invented from myth-sounding syllables (Seliel, Thalyra…).
 - Unexpected backend errors now surface as structured `internal_error` responses with the exception type and message, so a failed save shows something actionable in the inspector instead of a bare "Internal Server Error".
 
-- **Avatar customization for agents and for you.** The Agent Lab identity section now has an avatar editor: eight palette colors, image upload (client-side downscaled to a small square data URL), and — when the host Hermes install has image generation configured — a **"Generate from profile"** button that has Hermes paint a portrait from the agent's display name, role, description, and SOUL excerpt (`POST /members/{id}/avatar/generate`; the generated file is re-encoded to a ~256px WebP data URL in crew.db because the Hermes image cache is janitor-cleaned). Your own identity lives in a new `/me` endpoint (settings table, migration 5) with an "Edit your profile" dialog on Home: display name, avatar, color.
+- **Avatar customization for agents and for you.** The Bot Management identity section now has an avatar editor: eight palette colors, image upload (client-side downscaled to a small square data URL), and — when the host Hermes install has image generation configured — a **"Generate from profile"** button that has Hermes paint a portrait from the agent's display name, role, description, and SOUL excerpt (`POST /members/{id}/avatar/generate`; the generated file is re-encoded to a ~256px WebP data URL in channels.db because the Hermes image cache is janitor-cleaned). Your own identity lives in a new `/me` endpoint (settings table, migration 5) with an "Edit your profile" dialog on Home: display name, avatar, color.
 - **Stored avatars render everywhere.** A presentation context (members + user identity, refreshed on view changes) feeds message rows, the composer mention popup, channel headers, the Home crew strip, pending turns, the member roster, first-run, and the agent rail. User messages show your chosen display name instead of "You".
 
 Model selection:
@@ -69,7 +173,7 @@ Model selection:
 
 Sidebar:
 
-- Channel entries drop the literal `#` prefix and use the codicon hash glyph (`symbol-numeric`) instead; the Agent Lab entry moved below the channel list (order 400 vs. channels at 56+) with a beaker icon.
+- Channel entries drop the literal `#` prefix and use the codicon hash glyph (`symbol-numeric`) instead; the Bot Management entry moved below the channel list (order 400 vs. channels at 56+) with a beaker icon.
 
 Native session navigation:
 
@@ -77,7 +181,7 @@ Native session navigation:
 
 Desktop "Open session" fix:
 
-- Host detection no longer sniffs `__HERMES_PLUGIN_SDK__`: Hermes Desktop's own plugin loader also assigns that global (timing-dependent on plugin load order), so the desktop was intermittently misidentified as the web dashboard and "Open session" navigated to a fresh chat instead of opening the in-Crew session console. The dashboard entry now sets a Crew-owned `__HERMES_CREW_HOST__` marker and all host-specific behavior keys off it.
+- Host detection no longer sniffs `__HERMES_PLUGIN_SDK__`: Hermes Desktop's own plugin loader also assigns that global (timing-dependent on plugin load order), so the desktop was intermittently misidentified as the web dashboard and "Open session" navigated to a fresh chat instead of opening the in-Crew session console. The dashboard entry now sets a Crew-owned `__HERMES_CHANNELS_HOST__` marker and all host-specific behavior keys off it.
 - The details rail is a module-level component again — defined inside `CrewPage` it became a new component type per render, so the 2s event poll remounted the rail mid-interaction and could eat clicks.
 - The session console can no longer fail invisibly: it feature-detects `host.onEvent` (falling back to transcript polling for replies), translates "Hermes gateway unavailable" into an actionable message, and is wrapped in an error boundary that renders the failure instead of a dead surface.
 
@@ -106,10 +210,10 @@ Markdown, readable activity, and hands-on session jumps:
 - The activity panel reads like a story instead of a payload dump: each turn shows a human step timeline ("Queued → Claimed by a worker → Session started → Completed · inform"), tool runs get status dots and friendly summaries, result cards structure summary/artifacts/changed-files with the raw payload behind a disclosure, and Retry moved into a per-turn "More actions" menu.
 - Every turn now carries its Hermes session id, and **Open session** is the activity panel's primary action: in the web dashboard it resumes the session in chat directly (`/chat?resume=…`); in Hermes Desktop it opens the same resumed session in the web dashboard via the system browser, because Desktop 0.17 exposes no working in-app session activation to plugins (later found incorrect — an artifact of the host-misdetection bug; see the Native session navigation entry) (its plugin `navigate` only matches plugin routes, the main-window router is in-memory, and the bridge's `openSessionWindow` spawns a window that never becomes visible).
 
-Reply placement and the crew-collaboration skill:
+Reply placement and the channel-collaboration skill:
 
 - The intent envelope gains `placement` ("auto" | "thread" | "channel"): agents choose where their answer lands — follow the question (default), keep or start a thread under the trigger (work logs, side discussions), or post to the channel timeline even from a thread (final results). Humans choose the same way they always could: the channel composer posts to the channel, the thread pane's composer stays in the thread.
-- New `crew-collaboration` skill ships with the plugin and installs into `$HERMES_HOME/skills/hermes-crew/`: a full guide to the intent envelope (every intent with when-to-use), placement, recipients and automation budgets, loop limits, mentions and activation policies, project scope, and human-collaboration etiquette. The per-turn response contract stays lean and points agents at the skill; the installer manages it (removed on uninstall).
+- New `channel-collaboration` skill ships with the plugin and installs into `$HERMES_HOME/skills/hermes-channels/`: a full guide to the intent envelope (every intent with when-to-use), placement, recipients and automation budgets, loop limits, mentions and activation policies, project scope, and human-collaboration etiquette. The per-turn response contract stays lean and points agents at the skill; the installer manages it (removed on uninstall).
 - The message-details popover no longer clips: it flips upward for rows in the lower half of the timeline and wraps the message ID instead of overflowing.
 
 Message actions and data migration:
@@ -125,7 +229,7 @@ Navigation and state-correctness fixes:
 
 - Home's "Now running" and the activity rail no longer show finished turns as running: the journal appends informational frames (session_info, routing_decision) after `completed`, and turn summaries now derive state only from state-bearing events.
 - The Channels tab shows the in-page channels view instead of navigating the host to the standalone channel route; selecting or creating a channel inside Crew also stays inside Crew. The host sidebar's channel links remain the way to open standalone channel surfaces.
-- Switching between /crew, /crew/agent-lab, and channel routes now follows the new route even when Hermes reuses the mounted page component — the sidebar Agent Lab entry opens the Agent Lab instead of whatever view was left behind.
+- Switching between /crew, /channels/bot-management, and channel routes now follows the new route even when Hermes reuses the mounted page component — the sidebar Bot Management entry opens the Bot Management instead of whatever view was left behind.
 - The thread pane renders its replies: the message list's root-only filter (correct for channel timelines) no longer applies in thread mode.
 
 Agent replies now appear in the channel:
@@ -136,16 +240,16 @@ Agent replies now appear in the channel:
 
 Container-aware responsive layout:
 
-- Crew's grids now use CSS container queries against the plugin's own width instead of viewport media queries, which mis-sized layouts inside host chrome (Desktop's sidebar and file panel can leave the plugin under 500px in a tiled window). The Agent Lab collapses gracefully: icon-only section nav below ~768px container width, glance inspector appears at ≥1024px container width (the web dashboard override keeps it visible at its 1225px viewport). Channel details and thread rails switch between overlay and side-by-side at ~896px container width. Verified live in Hermes Desktop at both a half-tile (~460px effective width) and a large floating window.
+- Crew's grids now use CSS container queries against the plugin's own width instead of viewport media queries, which mis-sized layouts inside host chrome (Desktop's sidebar and file panel can leave the plugin under 500px in a tiled window). The Bot Management collapses gracefully: icon-only section nav below ~768px container width, glance inspector appears at ≥1024px container width (the web dashboard override keeps it visible at its 1225px viewport). Channel details and thread rails switch between overlay and side-by-side at ~896px container width. Verified live in Hermes Desktop at both a half-tile (~460px effective width) and a large floating window.
 
 Hermes Desktop rendering fix:
 
-- The Desktop plugin now compiles and inlines its own scoped utility stylesheet (`.hermes-crew-desktop`) into `plugin.js` and injects it on registration. Hermes Desktop ships no utility classes for plugins (no arbitrary-value grid/flex utilities, no `--ui-surface-secondary` token), which collapsed every multi-column Crew layout — most visibly the Agent Lab — into a single vertical scroll. Colors bridge to the host's theme tokens (`--background`, `--foreground`, `--ui-*`) so Crew follows the active Desktop theme. `verify:dist` now asserts the inlined scoped styles are present. Verified live in Hermes Desktop (Hermes Local) via real-window screenshots: Home, the Agent Lab's four-zone layout, and the channel workspace all render correctly.
+- The Desktop plugin now compiles and inlines its own scoped utility stylesheet (`.hermes-channels-desktop`) into `plugin.js` and injects it on registration. Hermes Desktop ships no utility classes for plugins (no arbitrary-value grid/flex utilities, no `--ui-surface-secondary` token), which collapsed every multi-column Crew layout — most visibly the Bot Management — into a single vertical scroll. Colors bridge to the host's theme tokens (`--background`, `--foreground`, `--ui-*`) so Crew follows the active Desktop theme. `verify:dist` now asserts the inlined scoped styles are present. Verified live in Hermes Desktop (Hermes Local) via real-window screenshots: Home, the Bot Management's four-zone layout, and the channel workspace all render correctly.
 
 Crew reimagined (second pass):
 
 - The Crew page is now an operational center: it lands on a Home view with crew status (agents, online count, channels), a "Now running" panel with live turn indicators and Stop controls, workspace cards for every channel, and recent activity. Channels remain the main workspaces, one click away.
-- Studio is renamed **Agent Lab**. It has its own entry in the Hermes Desktop sidebar (`/crew/agent-lab`, ordered below the channel list), a palette command ("Open Agent Lab"), and a polished four-zone layout: richer agent rail with roles and presence, icon section nav with accent selection, consistent editor fields, and a card-based "At a glance" inspector.
+- Studio is renamed **Bot Management**. It has its own entry in the Hermes Desktop sidebar (`/channels/bot-management`, ordered below the channel list), a palette command ("Open Bot Management"), and a polished four-zone layout: richer agent rail with roles and presence, icon section nav with accent selection, consistent editor fields, and a card-based "At a glance" inspector.
 - Composer refined again: auto-growing single-line-first input, pill mention chips with pressed states, inline project scope controls, elevated container with focus ring, and a rounded Send button.
 - Message rows: mentions are highlighted in accent, hover actions float in a raised toolbar, reply counts are pill buttons with an icon ("Reply in thread"), model labels are chips, and pending turns show a typing indicator.
 - Channel chrome: header with project chip and a member-avatars details button, details rail with header and close button, wider thread rail, restyled channel list and creation form, redesigned search view and first-run card.
@@ -162,7 +266,7 @@ Crew UI redesign (first pass):
 
 ## 0.1.0 — 2026-08-12
 
-Initial Hermes Crew release for one local user:
+Initial Hermes Channels release for one local user:
 
 - Profile-backed crew members with independent Hermes model, provider, SOUL, skills, and tool configuration.
 - Project-aware channels, message-scoped projects, inherited thread context, mentions, default responders, and per-channel activation policies.
@@ -171,11 +275,11 @@ Initial Hermes Crew release for one local user:
 - Hermes Desktop 0.20.0 runtime-loader compatibility verification for generated plugin imports.
 - Completed agent turns now refresh their channel message stream, so persisted replies appear without leaving the channel.
 - Crew Studio's native Hermes model catalog now renders inside the required dropdown context.
-- Hermes Crew channels now appear dynamically in the native sidebar with dedicated routes, persisted `# name (N)` unread counts, live create/rename/delete reconciliation, and restart-safe event catch-up.
+- Hermes Channels channels now appear dynamically in the native sidebar with dedicated routes, persisted `# name (N)` unread counts, live create/rename/delete reconciliation, and restart-safe event catch-up.
 - Native channel sidebar routes now render a standalone channel surface instead of repeating the full Crew management shell.
 - Switching between native channel sidebar routes now makes the new route authoritative, even when Hermes reuses the mounted page component.
 
-### Acceptance evidence
+### Historical acceptance evidence for the 2026-08-12 baseline
 
 - Automated release gate: 60 Python tests and 51 TypeScript/UI tests passed with no skipped acceptance scenarios.
 - Hermes Agent: `0.20.0` (`2026.8.3`).

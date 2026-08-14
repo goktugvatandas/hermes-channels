@@ -1,10 +1,10 @@
 import pytest
 
-from hermes_crew_backend.db import CrewDatabase
-from hermes_crew_backend.models import ProjectRef
-from hermes_crew_backend.project_context import resolve_project_context
-from hermes_crew_backend.repositories import CrewRepository
-from hermes_crew_backend.scheduler import Scheduler
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.models import ProjectRef
+from hermes_channels_backend.project_context import resolve_project_context
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.scheduler import Scheduler
 
 from tests.integration.fake_hermes import (
     FakeHermesGateway,
@@ -37,7 +37,7 @@ HERMES = ProjectRef(
 
 
 def _crew(tmp_path, *, channel_project: ProjectRef | None = None):
-    repository = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repository = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     channel = repository.create_channel(
         "general",
         default_responder_profile="atlas",
@@ -64,9 +64,10 @@ def _states(repository: CrewRepository) -> list[tuple[str | None, str]]:
     return [(row["profile_id"], row["state"]) for row in rows]
 
 
-def test_default_atlas_uses_gpt_while_mentioned_scout_uses_gemini(tmp_path):
-    _, channel, _, gateway = _crew(tmp_path)
-    _, turns = gateway.submit_user(channel.id, "@scout compare approaches", mentions=["scout"])
+def test_default_atlas_and_always_scout_use_independent_models(tmp_path):
+    repository, channel, _, gateway = _crew(tmp_path)
+    repository.add_member(channel.id, "scout", activation_policy="always")
+    _, turns = gateway.submit_user(channel.id, "Compare approaches")
 
     sessions = [gateway.start_next(), gateway.start_next()]
 
@@ -169,7 +170,8 @@ def test_message_project_stays_with_thread_and_next_top_level_is_global(tmp_path
 
 def test_stopping_atlas_does_not_prevent_scout_from_completing(tmp_path):
     repository, channel, scheduler, gateway = _crew(tmp_path)
-    gateway.submit_user(channel.id, "@scout investigate too", mentions=["scout"])
+    repository.add_member(channel.id, "scout", activation_policy="always")
+    gateway.submit_user(channel.id, "Investigate in parallel")
     first = gateway.start_next()
     second = gateway.start_next()
     assert first is not None and second is not None
@@ -232,7 +234,7 @@ def test_restart_interrupts_running_work_without_duplicate_submit(tmp_path):
 def test_missing_profile_model_and_project_are_durable_readiness_errors(
     tmp_path, profile, project, expected
 ):
-    repository = CrewRepository(CrewDatabase(tmp_path / "crew.db"))
+    repository = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
     target = "ghost" if profile is None else "atlas"
     channel = repository.create_channel("general", default_responder_profile=target)
     repository.add_member(channel.id, target, activation_policy="always")

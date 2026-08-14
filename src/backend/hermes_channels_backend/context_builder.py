@@ -1,4 +1,4 @@
-"""Deterministic, bounded prompts for Crew turns and optional classification."""
+"""Deterministic, bounded prompts for Channels turns and optional classification."""
 
 from __future__ import annotations
 
@@ -18,13 +18,18 @@ MAX_MESSAGE_CHARS = 12_000
 MAX_CONTEXT_CHARS = 120_000
 
 RESPONSE_CONTRACT = """End your final response with exactly one marker line and no text after it:
-[[hermes-crew:intent {"schemaVersion":1,"intent":"inform","recipients":[],"replyExpected":false,"replyBudget":0,"correlationId":null,"summary":"","placement":"auto"}]]
+[[hermes-channels:intent {"schemaVersion":1,"intent":"inform","recipients":[],"replyExpected":false,"replyBudget":0,"correlationId":null,"summary":"","placement":"auto"}]]
 Write the marker as plain text exactly as shown (double square brackets, not an HTML comment); readers never see it — Crew strips it from the displayed message.
 Use inform or result when no reply is needed. Name recipients only when a reply, handoff, or review is required.
 placement controls where your answer appears: "auto" answers where you were asked, "thread" keeps or starts a thread under the triggering message (use for long work logs or side discussions), "channel" posts to the channel timeline (use for final results the whole crew should see).
-If a skill named crew-collaboration is available, consult it for the full collaboration guide."""
+If a skill named channel-collaboration is available, consult it for the full collaboration guide."""
 
-_HIDDEN_INTENT = re.compile(r"(?:<!--\s*hermes-crew:intent\b[^\r\n]*?-->|\[\[\s*hermes-crew:intent\b[^\r\n]*?\]\])")
+_HIDDEN_INTENT = re.compile(
+    r"(?:<!--\s*hermes-(?:channels|crew):intent\b[^\r\n]*?-->"
+    r"|\[\[\s*hermes-(?:channels|crew):intent\b[^\r\n]*?\]\]"
+    r"|^[ \t]*(?:<!--|\[\[)\s*hermes-(?:channels|crew):intent\b[^\r\n]*$)",
+    re.MULTILINE,
+)
 
 
 def _bounded_content(content: str) -> str:

@@ -1,4 +1,4 @@
-"""SQLite connection management and schema migrations for Hermes Crew."""
+"""SQLite connection management and schema migrations for Hermes Channels."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -357,7 +357,7 @@ FROM activity_events e;
 
 
 class CrewDatabase:
-    """Owns safe SQLite connections and forward-only Crew migrations."""
+    """Owns safe SQLite connections and forward-only Channels migrations."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)

@@ -42,8 +42,8 @@ export interface TurnSummary {
 
 /** Canonical presentation name for a profile id ('agent' means the crew). */
 export function displayName(profileId: string): string {
-  if (profileId === 'agent') return 'Crew'
-  return profileId ? `${profileId[0].toUpperCase()}${profileId.slice(1)}` : 'Crew'
+  if (profileId === 'agent') return 'Bot'
+  return profileId ? `${profileId[0].toUpperCase()}${profileId.slice(1)}` : 'Bot'
 }
 
 /** Name-free state phrasing so callers can prepend any presentation name. */

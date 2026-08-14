@@ -8,9 +8,9 @@ import { build } from 'esbuild'
 import postcss from 'postcss'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const output = resolve(root, 'dist/desktop-plugins/hermes-crew/plugin.js')
-const dashboardOutput = resolve(root, 'dist/plugins/hermes-crew/dashboard/dist/index.js')
-const dashboardStyles = resolve(root, 'dist/plugins/hermes-crew/dashboard/dist/style.css')
+const output = resolve(root, 'dist/desktop-plugins/hermes-channels/plugin.js')
+const dashboardOutput = resolve(root, 'dist/plugins/hermes-channels/dashboard/dist/index.js')
+const dashboardStyles = resolve(root, 'dist/plugins/hermes-channels/dashboard/dist/style.css')
 const run = promisify(execFile)
 const excludePythonBytecode = (path) => !path.includes('__pycache__') && !path.endsWith('.pyc')
 
@@ -24,7 +24,7 @@ const scopeSelectors = (scopeClass) => ({
     rule.selectors = rule.selectors.map((selector) => (
       selector === ':root' || selector === ':host'
         ? `.${scopeClass}`
-        : selector.startsWith(`.${scopeClass}`)
+        : selector.includes(`.${scopeClass}`)
         ? selector
         : `.${scopeClass} ${selector}`
     ))
@@ -33,14 +33,14 @@ const scopeSelectors = (scopeClass) => ({
 
 // Hermes Desktop ships no utility classes for plugins, so Crew compiles its
 // own scoped stylesheet and inlines it into the desktop bundle.
-const desktopStyles = resolve(root, 'dist/desktop-plugins/hermes-crew/style.generated.css')
+const desktopStyles = resolve(root, 'dist/desktop-plugins/hermes-channels/style.generated.css')
 await run(
   resolve(root, 'node_modules/.bin/tailwindcss'),
   ['-i', resolve(root, 'src/desktop/style.css'), '-o', desktopStyles, '--minify'],
   { cwd: root },
 )
 const desktopCss = await readFile(desktopStyles, 'utf8')
-const scopedDesktopCss = await postcss([scopeSelectors('hermes-crew-desktop')]).process(desktopCss, {
+const scopedDesktopCss = await postcss([scopeSelectors('hermes-channels-desktop')]).process(desktopCss, {
   from: desktopStyles,
   to: desktopStyles,
 })
@@ -56,7 +56,7 @@ await build({
   jsx: 'automatic',
   external: ['@hermes/plugin-sdk', 'react', 'react/jsx-runtime'],
   alias: {
-    'virtual:crew-desktop-css': desktopStyles,
+    'virtual:channels-desktop-css': desktopStyles,
   },
   loader: { '.css': 'text' },
   legalComments: 'none',
@@ -71,20 +71,20 @@ await run(
 )
 
 const dashboardCss = await readFile(dashboardStyles, 'utf8')
-const scopedDashboardCss = await postcss([scopeSelectors('hermes-crew-dashboard')]).process(dashboardCss, {
+const scopedDashboardCss = await postcss([scopeSelectors('hermes-channels-dashboard')]).process(dashboardCss, {
   from: dashboardStyles,
   to: dashboardStyles,
 })
 await writeFile(dashboardStyles, scopedDashboardCss.css)
 
-await cp(resolve(root, 'plugin'), resolve(root, 'dist/plugins/hermes-crew'), {
+await cp(resolve(root, 'plugin'), resolve(root, 'dist/plugins/hermes-channels'), {
   recursive: true,
   filter: excludePythonBytecode,
 })
 await cp(resolve(root, 'skills'), resolve(root, 'dist/skills'), { recursive: true })
 await cp(
-  resolve(root, 'src/backend/hermes_crew_backend'),
-  resolve(root, 'dist/plugins/hermes-crew/dashboard/hermes_crew_backend'),
+  resolve(root, 'src/backend/hermes_channels_backend'),
+  resolve(root, 'dist/plugins/hermes-channels/dashboard/hermes_channels_backend'),
   {
     recursive: true,
     filter: excludePythonBytecode,

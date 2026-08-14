@@ -39,7 +39,7 @@ export function WorkspaceEditor({ api, channels, member, profile, onMember, save
   return (
     <section className="grid gap-3 rounded-lg border border-(--ui-stroke-secondary) p-3">
       <h3 className="text-sm font-semibold">Workspace · Permissions</h3>
-      <p className="text-xs text-(--ui-text-tertiary)">These selections narrow Crew routing. Hermes execution and sandbox settings enforce filesystem access.</p>
+      <p className="text-xs text-(--ui-text-tertiary)">These selections narrow channel routing. Hermes execution and sandbox settings enforce filesystem access.</p>
       <label className="grid gap-1 text-xs">Default project<select className="rounded-lg border border-(--ui-stroke-secondary) bg-background p-2" onChange={(event) => setDefaultProjectId(event.target.value)} value={defaultProjectId}><option value="">Global / profile default</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       {channels.map((channel) => <fieldset className="grid gap-1" key={channel.id}><legend className="text-xs font-semibold">Allowed in #{channel.name}</legend>{projects.map((project) => <label className="flex items-center gap-2 text-xs" key={project.id}><input aria-label={`Allow ${project.name} in #${channel.name}`} checked={(allowed[channel.id] || []).includes(project.id)} onChange={() => toggle(channel.id, project.id)} type="checkbox" />{project.name}</label>)}</fieldset>)}
       <button className="justify-self-end rounded bg-(--ui-accent) px-3 py-1.5 text-xs text-white" onClick={() => void save()} type="button">Save workspace</button>

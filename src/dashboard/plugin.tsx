@@ -15,10 +15,10 @@ declare global {
   }
 }
 
-// Crew-owned host marker: session navigation and other host-specific
+// Plugin-owned host marker: session navigation and other host-specific
 // behavior key off this instead of sniffing host SDK globals (which Hermes
 // Desktop also defines).
-;(window as Window & { __HERMES_CREW_HOST__?: string }).__HERMES_CREW_HOST__ = 'dashboard'
+;(window as Window & { __HERMES_CHANNELS_HOST__?: string }).__HERMES_CHANNELS_HOST__ = 'dashboard'
 
 function dashboardRest<T>(path: string, options?: { body?: unknown; method?: string }): Promise<T> {
   const headers = new Headers()
@@ -28,7 +28,7 @@ function dashboardRest<T>(path: string, options?: { body?: unknown; method?: str
     body = JSON.stringify(options.body)
   }
   return window.__HERMES_PLUGIN_SDK__.fetchJSON<T>(
-    `/api/plugins/hermes-crew${path}`,
+    `/api/plugins/hermes-channels${path}`,
     { body, headers, method: options?.method || 'GET' },
   )
 }
@@ -87,8 +87,8 @@ function HermesCrewDashboardPage() {
 
   return (
     <div
-      className="hermes-crew-dashboard"
-      data-crew-theme={dark ? 'dark' : 'light'}
+      className="hermes-channels-dashboard"
+      data-channels-theme={dark ? 'dark' : 'light'}
       ref={rootRef}
       style={{ height: `calc(100dvh - ${offsetTop}px)`, minHeight: 480, overflow: 'hidden' }}
     >
@@ -97,4 +97,4 @@ function HermesCrewDashboardPage() {
   )
 }
 
-window.__HERMES_PLUGINS__.register('hermes-crew', HermesCrewDashboardPage)
+window.__HERMES_PLUGINS__.register('hermes-channels', HermesCrewDashboardPage)

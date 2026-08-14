@@ -1,8 +1,11 @@
-"""Scoped FastAPI routes mounted by Hermes at /api/plugins/hermes-crew."""
+"""Scoped FastAPI routes mounted by Hermes at /api/plugins/hermes-channels."""
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from functools import partial
 import logging
 import os
 from pathlib import Path
@@ -34,12 +37,12 @@ from .repositories import (
     MessageRecord,
 )
 from .routing import Router
+from .profile_enablement import ensure_profiles_enabled
+from .session_visibility import backfill_archive
 from .scheduler import ApprovalRecord, Scheduler, TurnRecord
-from .schedules import Schedules
-from .steward import Steward, load_settings as load_steward_settings, save_settings as save_steward_settings
 
 
-logger = logging.getLogger("hermes_crew")
+logger = logging.getLogger("hermes_channels")
 
 
 def _camel(value: str) -> str:
@@ -58,6 +61,17 @@ class ApiModel(BaseModel):
 class MemberInput(ApiModel):
     profile_id: str
     activation_policy: ActivationPolicy = "mentioned"
+
+
+class ChannelSectionInput(ApiModel):
+    id: str = Field(min_length=1, max_length=32, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    name: str = Field(min_length=1, max_length=40)
+
+
+class ChannelSectionsPayload(ApiModel):
+    sections: list[ChannelSectionInput] = Field(default_factory=list, max_length=32)
+    # channelId -> sectionId; unassigned channels render under the root group.
+    assignments: dict[str, str] = Field(default_factory=dict)
 
 
 class ChannelCreate(ApiModel):
@@ -84,7 +98,7 @@ class ChannelMemberInput(ApiModel):
 
 
 # Avatars must be small self-contained data URLs: remote URLs would turn every
-# roster render into a tracking beacon, and unbounded strings bloat crew.db
+# roster render into a tracking beacon, and unbounded strings bloat channels.db
 # and every /members response. ~400k chars ≈ a 300 KB image.
 _AVATAR_MAX_CHARS = 400_000
 
@@ -117,22 +131,6 @@ class RoutingDefaultsPatch(ApiModel):
     max_depth: int | None = Field(default=None, ge=0, le=50)
     max_pair_repeats: int | None = Field(default=None, ge=0, le=50)
     max_concurrency: int | None = Field(default=None, ge=1, le=64)
-
-
-class ScheduleCreate(ApiModel):
-    name: str = Field(min_length=1, max_length=120)
-    schedule: str = Field(min_length=1, max_length=120)
-    channel_id: str = Field(min_length=1)
-    content: str = Field(min_length=1)
-    mentions: list[str] = Field(default_factory=list)
-
-
-class StewardPatch(ApiModel):
-    enabled: bool | None = None
-    interval_minutes: int | None = Field(default=None, ge=1, le=1440)
-    stall_minutes: int | None = Field(default=None, ge=1, le=1440)
-    provider: str | None = Field(default=None, max_length=200)
-    model: str | None = Field(default=None, max_length=200)
 
 
 class UserIdentityPatch(ApiModel):
@@ -292,8 +290,6 @@ class BackendServices:
     bus: EventBus | None = None
     scheduler: Scheduler | None = None
     adapter: HermesAdapter | None = None
-    steward: Steward | None = None
-    schedules: Schedules | None = None
 
     def load(self) -> "BackendServices":
         if self.database is None:
@@ -301,9 +297,9 @@ class BackendServices:
             self.repository = CrewRepository(self.database)
             self.bus = EventBus()
             self.scheduler = Scheduler(self.repository, event_bus=self.bus)
-            self.steward = Steward(self.repository, self.scheduler, self.scheduler.router)
-            self.schedules = Schedules(self.database_path)
             self.scheduler.reconcile_startup(set())
+            backfill_archive(self.repository)
+            ensure_profiles_enabled()
         if self.adapter is None:
             self.adapter = HermesAdapter()
         return self
@@ -311,7 +307,41 @@ class BackendServices:
 
 def _default_database_path() -> Path:
     hermes_home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
-    return hermes_home / "crew" / "crew.db"
+    return hermes_home / "channels" / "channels.db"
+
+
+async def _blocking_call(function, /, *args, **kwargs):
+    """Run a blocking host SDK call without FastAPI's implicit AnyIO pool."""
+
+    loop = asyncio.get_running_loop()
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="channels-sdk") as executor:
+        return await loop.run_in_executor(executor, partial(function, *args, **kwargs))
+
+
+def _resolve_session_store(
+    database_path: Path, database: CrewDatabase, session_id: str
+) -> tuple[Path, str]:
+    """Map either turn session id to the owning Hermes profile store."""
+
+    stored_session_id = session_id
+    profile_id: str | None = None
+    with database.connect() as connection:
+        turn = connection.execute(
+            """SELECT profile_id, stored_session_id FROM turns
+               WHERE stored_session_id = ? OR runtime_session_id = ?
+               ORDER BY created_at DESC LIMIT 1""",
+            (session_id, session_id),
+        ).fetchone()
+    if turn is not None:
+        profile_id = turn["profile_id"]
+        stored_session_id = turn["stored_session_id"] or session_id
+    home = database_path.parent.parent
+    state_db = (
+        home / "profiles" / profile_id / "state.db"
+        if profile_id and profile_id != "default"
+        else home / "state.db"
+    )
+    return state_db, stored_session_id
 
 
 def _channel(record: ChannelRecord) -> dict[str, Any]:
@@ -417,7 +447,7 @@ def create_router(
     @api.get("/health")
     async def health() -> dict[str, Any]:
         loaded()
-        return {"ok": True, "service": "hermes-crew"}
+        return {"ok": True, "service": "hermes-channels"}
 
     @api.post("/onboarding")
     async def onboarding(body: OnboardingInput) -> dict[str, Any]:
@@ -439,6 +469,20 @@ def create_router(
     async def create_channel(body: ChannelCreate) -> dict[str, Any]:
         service = loaded()
         assert service.repository is not None
+        if body.default_responder_profile:
+            responder = next(
+                (
+                    member
+                    for member in body.members
+                    if member.profile_id == body.default_responder_profile
+                ),
+                None,
+            )
+            if responder is None or responder.activation_policy in {"observer", "disabled"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="default responder must be an active channel member",
+                )
         channel = service.repository.create_channel(
             body.name,
             purpose=body.purpose,
@@ -464,6 +508,21 @@ def create_router(
             for field, value in body.model_dump(exclude_unset=True).items()
             if value is not None or field in clearable
         }
+        responder = changes.get("default_responder_profile")
+        if responder:
+            membership = next(
+                (
+                    member
+                    for member in service.repository.list_members(channel_id)
+                    if member.profile_id == responder
+                ),
+                None,
+            )
+            if membership is None or membership.activation_policy in {"observer", "disabled"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="default responder must be an active channel member",
+                )
         return _channel(service.repository.update_channel(channel_id, **changes))
 
     @api.get("/channels/{channel_id}/members")
@@ -479,11 +538,37 @@ def create_router(
     ) -> dict[str, Any]:
         service = loaded()
         assert service.repository is not None
+        channel = service.repository.require_channel(channel_id)
+        if (
+            channel.default_responder_profile == profile_id
+            and body.activation_policy in {"observer", "disabled"}
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="the default responder must remain active — pick a new "
+                "default responder for the channel first",
+            )
         return _channel_member(
             service.repository.add_member(
                 channel_id, profile_id, activation_policy=body.activation_policy
             )
         )
+
+    @api.delete("/channels/{channel_id}/members/{profile_id}")
+    async def delete_channel_member(channel_id: str, profile_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        channel = service.repository.require_channel(channel_id)
+        if channel.default_responder_profile == profile_id:
+            raise HTTPException(
+                status_code=409,
+                detail="the default responder cannot be removed — pick a new "
+                "default responder for the channel first",
+            )
+        removed = service.repository.remove_member(channel_id, profile_id)
+        if not removed:
+            raise HTTPException(status_code=404, detail="not a channel member")
+        return {"ok": True}
 
     @api.get("/members")
     async def list_all_members() -> list[dict[str, Any]]:
@@ -522,10 +607,8 @@ def create_router(
         assert service.adapter is not None
         return service.adapter.image_generation_status()
 
-    # Sync on purpose: Hermes image backends are blocking, so FastAPI runs
-    # these on the threadpool instead of stalling the event loop.
     @api.post("/members/{profile_id}/avatar/generate")
-    def generate_member_avatar(
+    async def generate_member_avatar(
         profile_id: str, body: AvatarGenerateInput | None = None
     ) -> Any:
         service = loaded()
@@ -549,8 +632,11 @@ def create_router(
             prompt = avatar_prompt(
                 member.display_name or profile_id, member.role, description, soul[:300]
             )
-        result = service.adapter.generate_image(
-            prompt, aspect_ratio="square", model=options.model
+        result = await _blocking_call(
+            service.adapter.generate_image,
+            prompt,
+            aspect_ratio="square",
+            model=options.model,
         )
         if not result.get("success") or not result.get("image"):
             return _error(
@@ -562,7 +648,7 @@ def create_router(
         )
 
     @api.post("/me/avatar/generate")
-    def generate_user_avatar(body: AvatarGenerateInput | None = None) -> Any:
+    async def generate_user_avatar(body: AvatarGenerateInput | None = None) -> Any:
         service = loaded()
         assert service.repository is not None
         assert service.adapter is not None
@@ -572,8 +658,11 @@ def create_router(
             prompt = enhance_user_prompt(options.prompt)
         else:
             prompt = user_avatar_prompt(str(stored.get("displayName") or "You"))
-        result = service.adapter.generate_image(
-            prompt, aspect_ratio="square", model=options.model
+        result = await _blocking_call(
+            service.adapter.generate_image,
+            prompt,
+            aspect_ratio="square",
+            model=options.model,
         )
         if not result.get("success") or not result.get("image"):
             return _error(
@@ -688,7 +777,7 @@ def create_router(
         return {"message": _message(message), "turnIds": [turn.id for turn in turns]}
 
     @api.get("/sessions/{session_id}/transcript")
-    def session_transcript(session_id: str) -> dict[str, Any]:
+    async def session_transcript(session_id: str) -> dict[str, Any]:
         """Stored Hermes session transcript for the in-Crew session console.
 
         Reads the agent's session store (state.db in the owner HERMES_HOME,
@@ -698,7 +787,10 @@ def create_router(
         answering 404 rather than surfacing raw sqlite errors.
         """
         service = loaded()
-        state_db = service.database_path.parent.parent / "state.db"
+        assert service.database is not None
+        state_db, stored_session_id = _resolve_session_store(
+            service.database_path, service.database, session_id
+        )
         if not state_db.is_file():
             raise KeyError(f"session store unavailable for: {session_id}")
         try:
@@ -709,7 +801,7 @@ def create_router(
         try:
             session = connection.execute(
                 "SELECT * FROM sessions WHERE id = ?",
-                (session_id,),
+                (stored_session_id,),
             ).fetchone()
             if session is None:
                 raise KeyError(f"unknown session: {session_id}")
@@ -718,7 +810,7 @@ def create_router(
                    WHERE session_id = ? AND role IN ('user', 'assistant')
                      AND content IS NOT NULL AND content != ''
                    ORDER BY id""",
-                (session_id,),
+                (stored_session_id,),
             ).fetchall()
         except sqlite3.Error as exc:
             raise KeyError(f"session store unreadable: {exc}") from exc
@@ -754,13 +846,17 @@ def create_router(
     async def list_profiles() -> list[dict[str, Any]]:
         service = loaded()
         assert service.adapter is not None
-        return service.adapter.list_profiles()
+        profiles = service.adapter.list_profiles()
+        # A bot created via Bot Mode or the CLI needs the plugin enabled in
+        # its own profile config before its backend can serve Channels.
+        ensure_profiles_enabled([p["name"] for p in profiles if p.get("name")])
+        return profiles
 
     @api.post("/profiles", status_code=201)
     async def create_profile(body: ProfileCreate) -> dict[str, Any]:
         service = loaded()
         assert service.adapter is not None
-        return service.adapter.create_profile(
+        created = service.adapter.create_profile(
             body.name,
             no_skills=body.no_skills,
             clone_from=body.clone_from,
@@ -768,6 +864,8 @@ def create_router(
             clone_all=body.clone_all,
             description=body.description,
         )
+        ensure_profiles_enabled([body.name])
+        return created
 
     @api.get("/profiles/{name}")
     async def get_profile(name: str) -> dict[str, Any]:
@@ -837,6 +935,32 @@ def create_router(
             body.profile, body.project_id, body.cwd
         ).model_dump(mode="json", by_alias=True)
 
+    @api.get("/channel-sections")
+    async def get_channel_sections() -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        stored = service.repository.get_setting("channel_sections") or {}
+        payload = ChannelSectionsPayload.model_validate(stored) if stored else ChannelSectionsPayload()
+        return payload.model_dump(mode="json", by_alias=True)
+
+    @api.put("/channel-sections")
+    async def put_channel_sections(body: ChannelSectionsPayload) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None
+        known = {section.id for section in body.sections}
+        if len(known) != len(body.sections):
+            raise HTTPException(status_code=422, detail="duplicate section ids")
+        cleaned = {
+            channel_id: section_id
+            for channel_id, section_id in body.assignments.items()
+            if section_id in known
+        }
+        document = ChannelSectionsPayload(sections=body.sections, assignments=cleaned)
+        service.repository.set_setting(
+            "channel_sections", document.model_dump(mode="json", by_alias=True)
+        )
+        return document.model_dump(mode="json", by_alias=True)
+
     @api.get("/routing-defaults")
     async def get_routing_defaults() -> dict[str, Any]:
         service = loaded()
@@ -857,88 +981,10 @@ def create_router(
         from .routing import DEFAULT_RULES
         return {**DEFAULT_RULES, **{k: v for k, v in stored.items() if k in DEFAULT_RULES}}
 
-    @api.get("/schedules")
-    def list_schedules() -> Any:
-        service = loaded()
-        assert service.schedules is not None
-        return service.schedules.list()
-
-    @api.post("/schedules", status_code=201)
-    def create_schedule(body: ScheduleCreate) -> Any:
-        service = loaded()
-        assert service.schedules is not None and service.repository is not None
-        service.repository.require_channel(body.channel_id)
-        return service.schedules.create(
-            name=body.name,
-            schedule=body.schedule,
-            channel_id=body.channel_id,
-            content=body.content,
-            mentions=body.mentions,
-        )
-
-    @api.delete("/schedules/{job_id}")
-    def delete_schedule(job_id: str) -> Any:
-        service = loaded()
-        assert service.schedules is not None
-        return {"ok": service.schedules.remove(job_id)}
-
-    @api.post("/schedules/{job_id}/pause")
-    def pause_schedule(job_id: str) -> Any:
-        service = loaded()
-        assert service.schedules is not None
-        return service.schedules.set_paused(job_id, True)
-
-    @api.post("/schedules/{job_id}/resume")
-    def resume_schedule(job_id: str) -> Any:
-        service = loaded()
-        assert service.schedules is not None
-        return service.schedules.set_paused(job_id, False)
-
-    @api.post("/schedules/{job_id}/trigger")
-    def trigger_schedule(job_id: str) -> Any:
-        service = loaded()
-        assert service.schedules is not None
-        return service.schedules.trigger(job_id)
-
-    @api.get("/steward")
-    async def get_steward() -> dict[str, Any]:
-        service = loaded()
-        assert service.repository is not None
-        return load_steward_settings(service.repository)
-
-    @api.put("/steward")
-    async def put_steward(body: StewardPatch) -> dict[str, Any]:
-        service = loaded()
-        assert service.repository is not None
-        # provider/model are clearable (null = rules only); the rest are not.
-        changes = {
-            _camel(key): value
-            for key, value in body.model_dump(exclude_unset=True).items()
-            if value is not None or key in {"provider", "model"}
-        }
-        return save_steward_settings(service.repository, changes)
-
-    @api.post("/steward/sweep")
-    async def steward_sweep() -> dict[str, Any]:
-        """Run one sweep now regardless of the enabled flag (manual unblock)."""
-        service = loaded()
-        assert service.steward is not None and service.repository is not None
-        settings = load_steward_settings(service.repository)
-        return service.steward.sweep(
-            stall_ms=int(settings["stallMinutes"]) * 60 * 1000,
-            provider=settings.get("provider"),
-            model=settings.get("model"),
-        )
-
     @api.post("/dispatch/claim")
     async def claim_dispatch(body: ClaimInput):
         service = loaded()
         assert service.scheduler is not None
-        # The steward rides the worker heartbeat of the system: claim polls
-        # arrive every ~2s while any Crew surface is open, and maybe_sweep
-        # throttles itself to the configured interval (no-op when disabled).
-        if service.steward is not None:
-            service.steward.maybe_sweep()
         claim = service.scheduler.claim(body.worker_id)
         if claim is None:
             return Response(status_code=204)

@@ -106,7 +106,7 @@ export function ActivityPanel({ api, events, onOpenConsole }: {
               {menuFor === turn.turnId ? (
                 <div className="absolute left-0 top-full z-20 mt-1 grid min-w-44 rounded-xl border border-(--ui-stroke-secondary) bg-background p-1 shadow-lg" onKeyDown={(event) => { if (event.key === 'Escape') setMenuFor(null) }} role="menu">
                   {turn.sessionId ? <button className="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium hover:bg-(--ui-surface-secondary)" onClick={() => { setMenuFor(null); openAgentSession(turn.sessionId!) }} role="menuitem" type="button">Open session</button> : null}
-                  {turn.sessionId && onOpenConsole ? <button className="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium hover:bg-(--ui-surface-secondary)" onClick={() => { setMenuFor(null); onOpenConsole(turn.sessionId!, turn.profileId) }} role="menuitem" type="button">Open in Crew console</button> : null}
+                  {turn.sessionId && onOpenConsole ? <button className="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium hover:bg-(--ui-surface-secondary)" onClick={() => { setMenuFor(null); onOpenConsole(turn.sessionId!, turn.profileId) }} role="menuitem" type="button">Open console</button> : null}
                   {turn.terminal ? <button aria-label={`Retry ${turn.profileId}`} className="rounded-lg px-2.5 py-1.5 text-left text-xs font-medium hover:bg-(--ui-surface-secondary) disabled:opacity-50" disabled={disabled.includes(`retry:${turn.turnId}`)} onClick={() => void retry(turn.turnId, turn.profileId)} role="menuitem" type="button">Retry turn</button> : null}
                 </div>
               ) : null}

@@ -266,7 +266,7 @@ class CrewRepository:
         *,
         activation_policy: ActivationPolicy = "mentioned",
         display_name: str | None = None,
-        role: str = "",
+        role: str | None = None,
         model_label: str | None = None,
         default_project: ProjectRef | None = None,
     ) -> ChannelMemberRecord:
@@ -282,8 +282,10 @@ class CrewRepository:
                        default_project_json, archived, updated_at
                    ) VALUES (?, ?, ?, ?, ?, 0, ?)
                    ON CONFLICT(profile_id) DO UPDATE SET
-                       display_name = excluded.display_name,
-                       role = excluded.role,
+                       display_name = CASE WHEN ? THEN excluded.display_name
+                           ELSE member_presentation.display_name END,
+                       role = CASE WHEN ? THEN excluded.role
+                           ELSE member_presentation.role END,
                        model_label = COALESCE(excluded.model_label, member_presentation.model_label),
                        default_project_json = COALESCE(
                            excluded.default_project_json,
@@ -294,10 +296,12 @@ class CrewRepository:
                 (
                     normalized_profile,
                     (display_name or normalized_profile).strip(),
-                    role.strip(),
+                    role.strip() if role is not None else "",
                     model_label,
                     _dump_project(default_project),
                     now,
+                    display_name is not None,
+                    role is not None,
                 ),
             )
             connection.execute(
@@ -316,6 +320,14 @@ class CrewRepository:
             created_at=now,
             updated_at=now,
         )
+
+    def remove_member(self, channel_id: str, profile_id: str) -> bool:
+        with self.database.connect() as connection:
+            result = connection.execute(
+                "DELETE FROM channel_members WHERE channel_id = ? AND profile_id = ?",
+                (channel_id, profile_id),
+            )
+        return result.rowcount > 0
 
     def list_members(self, channel_id: str) -> list[ChannelMemberRecord]:
         with self.database.connect() as connection:

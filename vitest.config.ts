@@ -7,7 +7,7 @@ export default defineConfig({
       '@hermes/plugin-sdk': fileURLToPath(
         new URL('./tests/desktop/hermes-sdk-mock.ts', import.meta.url),
       ),
-      'virtual:crew-desktop-css': fileURLToPath(
+      'virtual:channels-desktop-css': fileURLToPath(
         new URL('./tests/desktop/css-text-stub.ts', import.meta.url),
       ),
     },

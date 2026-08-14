@@ -43,6 +43,8 @@ declare module '@hermes/plugin-sdk' {
   export interface PluginContribution {
     id: string
     area: string
+    /** Pane contributions: the tab label when the pane shares a zone. */
+    title?: string
     order?: number
     data?: unknown
     render?: () => ReactNode
@@ -86,6 +88,25 @@ declare module '@hermes/plugin-sdk' {
   export const ROUTES_AREA: string
   export const SIDEBAR_NAV_AREA: string
   export const PALETTE_AREA: string
+  export function ContextMenu(props: { children?: ReactNode }): ReactNode
+  export function ContextMenuTrigger(props: { asChild?: boolean; children?: ReactNode }): ReactNode
+  export function ContextMenuContent(props: { children?: ReactNode; className?: string }): ReactNode
+  export function ContextMenuItem(props: {
+    children?: ReactNode
+    className?: string
+    style?: import('react').CSSProperties
+    onSelect?(event: Event): void
+  }): ReactNode
+  export function ContextMenuSeparator(props: { className?: string }): ReactNode
+  export function Dialog(props: { open?: boolean; onOpenChange?(open: boolean): void; children?: ReactNode }): ReactNode
+  export function DialogContent(props: { children?: ReactNode; className?: string }): ReactNode
+  export function DialogHeader(props: { children?: ReactNode; className?: string }): ReactNode
+  export function DialogTitle(props: { children?: ReactNode; className?: string }): ReactNode
+  export function Select(props: { value?: string; onValueChange?(value: string): void; disabled?: boolean; children?: ReactNode }): ReactNode
+  export function SelectTrigger(props: { children?: ReactNode; className?: string }): ReactNode
+  export function SelectValue(props: { placeholder?: string }): ReactNode
+  export function SelectContent(props: { children?: ReactNode; className?: string }): ReactNode
+  export function SelectItem(props: { value: string; children?: ReactNode; className?: string; disabled?: boolean }): ReactNode
   export function DropdownMenu(props: {
     children?: ReactNode
     onOpenChange?(open: boolean): void
@@ -108,6 +129,11 @@ declare module '@hermes/plugin-sdk' {
   ): Promise<RuntimeReadinessResult>
   export const host: {
     navigate(path: string): void
+    notify?(input: { kind?: 'info' | 'error' | 'success'; message: string }): void
+    /** Newer hosts: open a fresh chat draft under the given profile. */
+    newChat?(profile: string): void
+    /** Newer hosts: open a stored session by id, switching profile first. */
+    openSession?(sessionId: string, options?: { profile?: string }): Promise<void> | void
     onEvent(type: string, listener: (event: {
       type: string
       session_id?: string

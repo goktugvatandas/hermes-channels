@@ -44,9 +44,9 @@ export function SearchView({ api, channels, profiles }: {
   }
 
   return (
-    <section aria-label="Crew search" className="min-h-0 flex-1 overflow-auto">
+    <section aria-label="Channels search" className="min-h-0 flex-1 overflow-auto">
       <div className="mx-auto grid w-full max-w-3xl content-start gap-4 px-6 py-6">
-        <header><h2 className="text-lg font-semibold">Search</h2><p className="mt-0.5 text-sm text-(--ui-text-secondary)">Find messages and durable agent activity across your crew.</p></header>
+        <header><h2 className="text-lg font-semibold">Search</h2><p className="mt-0.5 text-sm text-(--ui-text-secondary)">Find messages and durable bot activity across your channels.</p></header>
         <form className="grid gap-3 rounded-2xl border border-(--ui-stroke-secondary) bg-background p-4 shadow-sm" onSubmit={submit}>
           <label className="grid gap-1.5 text-xs font-medium text-(--ui-text-secondary)">Search text<input className="rounded-lg border border-(--ui-stroke-secondary) bg-transparent px-3 py-2 text-sm font-normal text-foreground" onChange={(event) => setQ(event.target.value)} placeholder="What are you looking for?" value={q} /></label>
           <div className="grid grid-cols-1 gap-2.5 @2xl:grid-cols-2 @5xl:grid-cols-4">

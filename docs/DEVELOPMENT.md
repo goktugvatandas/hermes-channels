@@ -82,8 +82,8 @@ runtime has no remote debugging.
 ## Release
 
 ```bash
-npm run package   # dist/release/hermes-crew-<version>.tar.gz
+npm run package   # dist/release/hermes-channels-<version>.tar.gz
 ```
 
-The tarball contains `dist/` plus the installer. `CHANGELOG.md` carries an
-acceptance-evidence section per release.
+The tarball contains install-ready `desktop-plugins/`, `plugins/`, and
+`skills/` trees plus the installer, documentation, license, and metadata.

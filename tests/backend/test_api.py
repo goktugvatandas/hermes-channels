@@ -6,17 +6,21 @@ from fastapi import FastAPI
 import httpx
 import pytest
 
-from hermes_crew_backend.api import create_router
-from hermes_crew_backend.models import ProjectRef
+from hermes_channels_backend.api import _resolve_session_store, create_router
+from hermes_channels_backend.db import CrewDatabase
+from hermes_channels_backend.models import ProjectRef
+from hermes_channels_backend.repositories import CrewRepository
+from hermes_channels_backend.routing import Router
+from hermes_channels_backend.scheduler import Scheduler
 
 
-PREFIX = "/api/plugins/hermes-crew"
+PREFIX = "/api/plugins/hermes-channels"
 
 
 def _app(tmp_path, hermes_adapter=None) -> FastAPI:
     app = FastAPI()
     app.include_router(
-        create_router(tmp_path / "crew.db", hermes_adapter=hermes_adapter),
+        create_router(tmp_path / "channels.db", hermes_adapter=hermes_adapter),
         prefix=PREFIX,
     )
     return app
@@ -50,7 +54,7 @@ async def test_health_channel_message_idempotency_and_thread_routes(tmp_path):
     async with _client(_app(tmp_path)) as client:
         assert (await client.get(f"{PREFIX}/health")).json() == {
             "ok": True,
-            "service": "hermes-crew",
+            "service": "hermes-channels",
         }
         channel = await _create_channel(client)
         patched = await client.patch(
@@ -115,6 +119,9 @@ async def test_studio_member_behavior_and_classifier_routes(tmp_path):
         )
         assert activation.status_code == 200
         assert activation.json()["activationPolicy"] == "always"
+        presentation = (await client.get(f"{PREFIX}/members/atlas")).json()
+        assert presentation["displayName"] == "Atlas"
+        assert presentation["role"] == "Engineer"
         assert (await client.get(f"{PREFIX}/channels/{channel['id']}/members")).json() == [
             {
                 "channelId": channel["id"],
@@ -333,7 +340,7 @@ async def test_dispatch_failure_is_durable_and_visible_to_the_activity_journal(t
 
 @pytest.mark.asyncio
 async def test_backend_restart_reaps_only_stale_claimed_work(tmp_path):
-    """Both hosts share crew.db: a booting backend keeps fresh in-flight turns
+    """Both hosts share channels.db: a booting backend keeps fresh in-flight turns
     (they may belong to the other live host) and reaps only journal-silent
     ones. Regression: it used to blanket-interrupt everything in flight."""
     import sqlite3 as _sqlite3
@@ -361,7 +368,7 @@ async def test_backend_restart_reaps_only_stale_claimed_work(tmp_path):
     # Backdate every trace of liveness past the staleness window; the next
     # backend (or claim poll) now treats the turn as orphaned.
     stale = int(time.time() * 1000) - 10 * 60 * 1000
-    with _sqlite3.connect(tmp_path / "crew.db") as connection:
+    with _sqlite3.connect(tmp_path / "channels.db") as connection:
         connection.execute("UPDATE turns SET updated_at = ?", (stale,))
         connection.execute("UPDATE activity_events SET created_at = ?", (stale,))
 
@@ -755,3 +762,122 @@ async def test_events_limit_returns_newest_ascending(tmp_path):
         assert [item["sequence"] for item in limited] == [
             item["sequence"] for item in everything[-2:]
         ]
+
+
+
+@pytest.mark.asyncio
+async def test_channel_sections_round_trip_and_validation(tmp_path):
+    """Sections persist; assignments to unknown sections are dropped."""
+    async with _client(_app(tmp_path)) as client:
+        assert (await client.get(f"{PREFIX}/channel-sections")).json() == {
+            "sections": [],
+            "assignments": {},
+        }
+        saved = await client.put(
+            f"{PREFIX}/channel-sections",
+            json={
+                "sections": [{"id": "proj-x", "name": "Project X"}],
+                "assignments": {"chan-1": "proj-x", "chan-2": "ghost"},
+            },
+        )
+        assert saved.status_code == 200
+        assert saved.json() == {
+            "sections": [{"id": "proj-x", "name": "Project X"}],
+            "assignments": {"chan-1": "proj-x"},
+        }
+        assert (await client.get(f"{PREFIX}/channel-sections")).json()["sections"] == [
+            {"id": "proj-x", "name": "Project X"}
+        ]
+        duplicate = await client.put(
+            f"{PREFIX}/channel-sections",
+            json={"sections": [{"id": "a", "name": "A"}, {"id": "a", "name": "B"}], "assignments": {}},
+        )
+        assert duplicate.status_code == 422
+
+
+def test_profile_enablement_heals_configs(tmp_path, monkeypatch):
+    """Profile configs gain plugins.enabled: hermes-channels exactly once."""
+    from hermes_channels_backend import profile_enablement
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(profile_enablement, "_healed", set())
+    profile = tmp_path / "profiles" / "athena"
+    profile.mkdir(parents=True)
+    (profile / "config.yaml").write_text("model: foo\n", encoding="utf-8")
+
+    assert profile_enablement.ensure_profiles_enabled() == 1
+    text = (profile / "config.yaml").read_text(encoding="utf-8")
+    assert "plugins:" in text and "- hermes-channels" in text
+    # Idempotent: cached per process, and the line is never duplicated.
+    monkeypatch.setattr(profile_enablement, "_healed", set())
+    assert profile_enablement.ensure_profiles_enabled() == 0
+
+
+@pytest.mark.asyncio
+async def test_channel_member_add_remove_and_responder_guard(tmp_path):
+    """Members are managed per channel; the default responder is protected."""
+    async with _client(_app(tmp_path)) as client:
+        channel = await _create_channel(client)
+        cid = channel["id"]
+
+        added = await client.put(
+            f"{PREFIX}/channels/{cid}/members/freya",
+            json={"activationPolicy": "mentioned"},
+        )
+        assert added.status_code == 200
+        members = (await client.get(f"{PREFIX}/channels/{cid}/members")).json()
+        assert {m["profileId"] for m in members} == {"atlas", "freya"}
+
+        removed = await client.delete(f"{PREFIX}/channels/{cid}/members/freya")
+        assert removed.status_code == 200
+        members = (await client.get(f"{PREFIX}/channels/{cid}/members")).json()
+        assert {m["profileId"] for m in members} == {"atlas"}
+
+        guarded = await client.delete(f"{PREFIX}/channels/{cid}/members/atlas")
+        assert guarded.status_code == 409
+        inactive = await client.put(
+            f"{PREFIX}/channels/{cid}/members/atlas",
+            json={"activationPolicy": "disabled"},
+        )
+        assert inactive.status_code == 409
+        assert (await client.delete(f"{PREFIX}/channels/{cid}/members/ghost")).status_code == 404
+
+        await client.put(
+            f"{PREFIX}/channels/{cid}/members/freya",
+            json={"activationPolicy": "mentioned"},
+        )
+        switched = await client.patch(
+            f"{PREFIX}/channels/{cid}",
+            json={"defaultResponderProfile": "freya"},
+        )
+        assert switched.status_code == 200
+        assert switched.json()["defaultResponderProfile"] == "freya"
+        assert (await client.delete(
+            f"{PREFIX}/channels/{cid}/members/atlas"
+        )).status_code == 200
+
+
+def test_session_transcript_uses_the_turn_profile_store(tmp_path):
+    """Bot turns live under profiles/<name>/state.db, not the owner store."""
+    home = tmp_path / "home"
+    database_path = home / "channels" / "channels.db"
+    database = CrewDatabase(database_path)
+    repository = CrewRepository(database)
+    channel = repository.create_channel(
+        "general", default_responder_profile="atlas"
+    )
+    repository.add_member(channel.id, "atlas")
+    message = repository.append_message(
+        channel.id, "user", "Investigate", mentions=["atlas"]
+    )
+    scheduler = Scheduler(repository)
+    turn = scheduler.enqueue(Router(repository).plan(message.id)[0])
+    scheduler.claim("worker-1")
+    scheduler.bind_session(
+        turn.id, runtime_session_id="runtime-1", stored_session_id="stored-1"
+    )
+
+    assert _resolve_session_store(database_path, database, "runtime-1") == (
+        home / "profiles" / "atlas" / "state.db",
+        "stored-1",
+    )

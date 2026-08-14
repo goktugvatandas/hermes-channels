@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from typing import Any
 
-from hermes_crew_backend.intent import parse_agent_output
-from hermes_crew_backend.models import DispatchClaim, ProjectRef
-from hermes_crew_backend.repositories import CrewRepository, MessageRecord
-from hermes_crew_backend.scheduler import ApprovalRecord, Scheduler, TurnRecord
+from hermes_channels_backend.intent import parse_agent_output
+from hermes_channels_backend.models import DispatchClaim, ProjectRef
+from hermes_channels_backend.repositories import CrewRepository, MessageRecord
+from hermes_channels_backend.scheduler import ApprovalRecord, Scheduler, TurnRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,7 +184,7 @@ def marker(
     recipients_json = ",".join(f'"{item}"' for item in targets)
     placement_json = f',"placement":"{placement}"' if placement else ""
     return (
-        '<!-- hermes-crew:intent {"schemaVersion":1,'
+        '<!-- hermes-channels:intent {"schemaVersion":1,'
         f'"intent":"{intent}","recipients":[{recipients_json}],' 
         f'"replyExpected":{str(reply_expected).lower()},'
         f'"replyBudget":{reply_budget}{placement_json}}} -->'

@@ -10,12 +10,17 @@ const CLAIM_INTERVAL_MS = 2_000
 // envelope before it existed — every handoff downgraded to the default. A
 // turn finalizes only after its session stays quiet for this long.
 const COMPLETE_SETTLE_MS = 6_000
+// Before ANY message.complete has been banked the model is still mid-turn —
+// streamed text going quiet means a tool call or silent reasoning, not
+// completion (the "I'll load the skill" truncation). Only a long safety
+// fallback may finalize an uncompleted turn; every session event postpones it.
+const FALLBACK_SETTLE_MS = 300_000
 // Liveness beat per actively-driven turn; the backend reaps in-flight turns
 // silent for ~5 minutes, so a 60s cadence tolerates several missed beats.
 const HEARTBEAT_INTERVAL_MS = 60_000
 const EVENT_FLUSH_MS = 100
 const EVENT_BATCH_SIZE = 50
-const WORKER_STORAGE_KEY = 'hermes-crew.worker-id'
+const WORKER_STORAGE_KEY = 'hermes-channels.worker-id'
 
 interface SessionCreateResult {
   session_id: string
@@ -40,6 +45,7 @@ interface GatewayWorkerOptions {
   workerId?: string
   /** Test hook: settle window before a turn's completion is finalized. */
   completeSettleMs?: number
+  fallbackSettleMs?: number
 }
 
 interface QueuedEvent extends NormalizedGatewayEvent {
@@ -61,7 +67,10 @@ function stableWorkerId(): string {
 function sessionCreateParams(claim: DispatchClaim): Record<string, unknown> {
   return {
     cols: 96,
-    source: 'desktop',
+    // 'tool' rides the host's own internal-session deny-list: these worker
+    // runs stay out of the session sidebar, session.list, and Bot Mode's
+    // per-bot previews, while remaining openable by id from Crew's UI.
+    source: 'tool',
     ...(claim.cwd ? { cwd: claim.cwd } : {}),
     ...(claim.profileId ? { profile: claim.profileId } : {}),
     ...(claim.model
@@ -118,6 +127,16 @@ export class GatewayWorker {
   private readonly settleTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly lastHeartbeat = new Map<string, number>()
   private readonly completeSettleMs: number
+  private readonly fallbackSettleMs: number
+  // Finalize state machine inputs: the short settle applies only when the
+  // LAST decisive signal was a completion — a tool starting after a banked
+  // complete means the model is still working (complete → tool → final
+  // complete would otherwise truncate at the tool call). Monotonic sequence,
+  // not wall clock: same-millisecond event pairs must still order correctly.
+  private signalSeq = 0
+  private readonly lastActivitySeq = new Map<string, number>()
+  private readonly lastCompleteSeq = new Map<string, number>()
+  private readonly lastWorkSeq = new Map<string, number>()
   private eventQueue: QueuedEvent[] = []
   private eventTimer: ReturnType<typeof setTimeout> | null = null
   private interval: ReturnType<typeof setInterval> | null = null
@@ -135,19 +154,20 @@ export class GatewayWorker {
     this.gatewayState = options.gatewayState ?? host.state.gateway
     this.workerId = options.workerId ?? stableWorkerId()
     this.completeSettleMs = options.completeSettleMs ?? COMPLETE_SETTLE_MS
+    this.fallbackSettleMs = options.fallbackSettleMs ?? FALLBACK_SETTLE_MS
   }
 
   start(): () => void {
     this.eventDisposer = this.onEvent('*', (event) => {
       void this.handleGatewayEvent(event).catch((error: unknown) => {
-        console.error('[hermes-crew] gateway event failed', error)
+        console.error('[hermes-channels] gateway event failed', error)
       })
     })
     const socketDisposer = this.socket('/events', (data) => {
       void this.handleCrewFrame(data)
         .then(() => this.tick())
         .catch((error: unknown) => {
-          console.error('[hermes-crew] socket event failed', error)
+          console.error('[hermes-channels] socket event failed', error)
         })
     })
     this.socketDisposer = typeof socketDisposer === 'function' ? socketDisposer : null
@@ -166,6 +186,8 @@ export class GatewayWorker {
     this.socketDisposer?.()
     this.eventDisposer = null
     this.socketDisposer = null
+    for (const timer of this.settleTimers.values()) clearTimeout(timer)
+    this.settleTimers.clear()
   }
 
   async claimOnce(): Promise<boolean> {
@@ -196,7 +218,7 @@ export class GatewayWorker {
           session_id: created.session_id,
           instructions: claim.instructions ?? '',
           input: claim.input ?? '',
-          task: 'hermes_crew_classifier',
+          task: 'hermes_channels_classifier',
           max_tokens: claim.maxTokens,
           temperature: claim.temperature,
         })) as OneShotResult
@@ -228,14 +250,25 @@ export class GatewayWorker {
     if (!sessionId) return
     const turnId = this.sessionToTurn.get(sessionId)
     if (!turnId) return
+    this.lastActivitySeq.set(turnId, ++this.signalSeq)
 
     if (event.type === 'message.delta') {
       const text = this.gatewayText(event.payload)
       if (text) this.assistantText.set(turnId, (this.assistantText.get(turnId) ?? '') + text)
-      this.scheduleFinalize(turnId, sessionId)
+    }
+
+    if (
+      event.type === 'message.delta' ||
+      event.type === 'tool.start' ||
+      event.type === 'tool.progress' ||
+      event.type === 'thinking.delta' ||
+      event.type === 'reasoning.delta'
+    ) {
+      this.lastWorkSeq.set(turnId, ++this.signalSeq)
     }
 
     if (event.type === 'message.complete') {
+      this.lastCompleteSeq.set(turnId, ++this.signalSeq)
       // One reply spans several assistant messages; bank this one and keep
       // waiting — the finalize timer fires once the session stays quiet.
       // Per message, prefer whichever text carries a marker, then the longer
@@ -251,6 +284,11 @@ export class GatewayWorker {
       this.scheduleFinalize(turnId, sessionId)
       return
     }
+
+    // Any other session activity (deltas, tools, thinking, status) proves the
+    // turn is alive: postpone finalize. Short settle once a complete is
+    // banked (multi-message replies), long safety fallback before that.
+    this.scheduleFinalize(turnId, sessionId)
 
     const normalized = normalizeGatewayEvent(event)
     if (normalized) this.queueEvent({ ...normalized, turnId })
@@ -275,6 +313,9 @@ export class GatewayWorker {
   private unbind(turnId: string, sessionId: string): void {
     this.sessionToTurn.delete(sessionId)
     this.turnToSession.delete(turnId)
+    this.lastCompleteSeq.delete(turnId)
+    this.lastWorkSeq.delete(turnId)
+    this.lastActivitySeq.delete(turnId)
     this.assistantText.delete(turnId)
     this.completedMessages.delete(turnId)
     this.lastHeartbeat.delete(turnId)
@@ -286,20 +327,33 @@ export class GatewayWorker {
   private scheduleFinalize(turnId: string, sessionId: string): void {
     const existing = this.settleTimers.get(turnId)
     if (existing) clearTimeout(existing)
+    const hasBanked = (this.completedMessages.get(turnId) ?? []).length > 0
+    const completeIsLatest =
+      (this.lastCompleteSeq.get(turnId) ?? 0) >= (this.lastWorkSeq.get(turnId) ?? 0)
+    const delay = hasBanked && completeIsLatest
+      ? this.completeSettleMs
+      : this.fallbackSettleMs
     this.settleTimers.set(turnId, setTimeout(() => {
       void this.finalizeTurn(turnId, sessionId).catch((error: unknown) => {
-        console.error('[hermes-crew] turn completion failed', error)
+        console.error('[hermes-channels] turn completion failed', error)
       })
-    }, this.completeSettleMs))
+    }, delay))
   }
 
   private async finalizeTurn(turnId: string, sessionId: string): Promise<void> {
     if (!this.turnToSession.has(turnId)) return
+    const observedActivity = this.lastActivitySeq.get(turnId)
+    await this.flushAllEvents()
+    // A gateway event received while queued events were flushing owns the
+    // next settle window; never complete from a stale pre-flush snapshot.
+    if (
+      this.lastActivitySeq.get(turnId) !== observedActivity ||
+      !this.turnToSession.has(turnId)
+    ) return
     const banked = this.completedMessages.get(turnId) ?? []
     const trailing = this.assistantText.get(turnId) || ''
     const fullText = [...banked, trailing].filter(Boolean).join('\n\n')
     if (!fullText) return
-    await this.flushAllEvents()
     const parsed = parseIntentMarker(fullText)
     await this.rest(`/dispatch/${encodeURIComponent(turnId)}/complete`, {
       method: 'POST',
@@ -391,7 +445,7 @@ export class GatewayWorker {
       await this.heartbeatActiveTurns()
       await this.claimOnce()
     } catch (error) {
-      console.error('[hermes-crew] dispatch tick failed', error)
+      console.error('[hermes-channels] dispatch tick failed', error)
     } finally {
       this.ticking = false
     }

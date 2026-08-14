@@ -1,1 +1,1 @@
-"""Hermes Crew integration-test support."""
+"""Hermes Channels integration-test support."""

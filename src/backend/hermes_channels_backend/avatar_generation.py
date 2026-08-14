@@ -1,7 +1,7 @@
 """Turn Hermes image-generation output into stored member avatars.
 
 The Hermes image cache is janitor-cleaned after ~24h, so generated avatars are
-re-encoded as small self-contained data URLs and persisted in crew.db instead
+re-encoded as small self-contained data URLs and persisted in channels.db instead
 of referencing the original file.
 """
 

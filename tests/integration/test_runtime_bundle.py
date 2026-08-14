@@ -4,8 +4,8 @@ import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[2]
-PLUGIN = ROOT / "dist" / "desktop-plugins" / "hermes-crew" / "plugin.js"
-DASHBOARD_PLUGIN = ROOT / "dist" / "plugins" / "hermes-crew" / "dashboard" / "dist" / "index.js"
+PLUGIN = ROOT / "dist" / "desktop-plugins" / "hermes-channels" / "plugin.js"
+DASHBOARD_PLUGIN = ROOT / "dist" / "plugins" / "hermes-channels" / "dashboard" / "dist" / "index.js"
 ALLOWED_IMPORTS = {
     "@hermes/plugin-sdk",
     "react",
@@ -63,5 +63,5 @@ def test_bundle_contains_a_self_registering_dashboard_entry():
     source = DASHBOARD_PLUGIN.read_text(encoding="utf-8")
 
     assert "__HERMES_PLUGIN_SDK__" in source
-    assert '__HERMES_PLUGINS__.register("hermes-crew"' in source
+    assert '__HERMES_PLUGINS__.register("hermes-channels"' in source
     assert not re.search(r"(?:^|\n)\s*(?:import|export)\s", source)
