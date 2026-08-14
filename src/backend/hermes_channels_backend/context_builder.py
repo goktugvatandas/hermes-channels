@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from .kanban_bridge import BOARD_MAP_SETTING, KanbanBridge, default_board_slug
 from .project_context import resolve_project_context
 from .repositories import CrewRepository, MessageRecord
 
@@ -46,6 +47,24 @@ class ContextBuilder:
     def __init__(self, repository: CrewRepository):
         self.repository = repository
 
+    def _channel_board(self, channel_id: str, channel_name: str) -> str | None:
+        """The channel's bound kanban board slug, or None when unbound.
+
+        Mirrors the API's resolution: explicit binding wins; the conventional
+        board only counts when it already exists on the host. Host-store
+        access is best-effort — context building must never fail over kanban.
+        """
+
+        overrides = self.repository.get_setting(BOARD_MAP_SETTING) or {}
+        bound = overrides.get(channel_id)
+        if bound:
+            return str(bound)
+        conventional = default_board_slug(channel_name)
+        try:
+            return conventional if KanbanBridge().board_exists(conventional) else None
+        except Exception:
+            return None
+
     def for_turn(self, turn: PlannedTurn) -> str:
         message = self.repository.require_message(turn.message_id)
         channel = self.repository.require_channel(turn.channel_id)
@@ -86,7 +105,8 @@ class ContextBuilder:
             (
                 "CHANNEL",
                 f"name: #{channel.name}\npurpose: {channel.purpose or '(none)'}\n"
-                f"topic: {channel.topic or '(none)'}",
+                f"topic: {channel.topic or '(none)'}\n"
+                f"board: {self._channel_board(channel.id, channel.name) or '(none bound)'}",
             ),
             (
                 "PARTICIPANTS",

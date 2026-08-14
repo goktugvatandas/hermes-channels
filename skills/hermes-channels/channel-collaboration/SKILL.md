@@ -1,7 +1,7 @@
 ---
 name: channel-collaboration
-description: "How to collaborate in Hermes Channels: the intent envelope, reply placement, routing budgets, threads, and project scope."
-version: 1.2.0
+description: "How to collaborate in Hermes Channels: the intent envelope, reply placement, routing budgets, threads, project scope, and the channel kanban board."
+version: 1.3.0
 author: Hermes Channels
 license: MIT
 platforms: [linux, macos, windows]
@@ -100,6 +100,32 @@ this conversation is bound to. `mode: global` means your own global context.
 A message-scoped project applies to that message and its whole thread — thread
 replies inherit it with isolated per-profile sessions. Never assume a project
 that PROJECT does not name.
+
+## The channel board (kanban)
+
+The CHANNEL section may include a `board:` line naming the Hermes kanban
+board this channel is bound to (for example `board: channel-seatech`). That
+board is the shared execution surface between you, the other bots, and the
+human — it is a real host kanban board, so your `kanban_*` tools operate on
+the very same cards the human sees in the channel's Board pane.
+
+Rules:
+
+- **Always pass the board explicitly**: every kanban tool accepts a `board`
+  parameter — use the slug from the CHANNEL section. Without it your tools
+  hit your profile's current board, which is usually NOT the channel's.
+- `board: (none bound)` means this channel has no board. Do not create one on
+  your own initiative — creating or connecting boards is the human's call
+  from the Board pane. Track state in your messages instead.
+- **File cards for accepted multi-step work** (`kanban_create`), keep their
+  status honest (`kanban_complete` with a result, `kanban_block` with a
+  reason, `kanban_comment` for progress), and reference card ids
+  (`t_…`) in your visible messages so humans and observer bots can follow.
+- Card titles and descriptions may be edited by humans between your turns,
+  and an `edited` event appears in the card history — re-read a card
+  (`kanban_show`) before acting on stale details.
+- A good `result` message pairs with its card: complete the card with the
+  outcome, then answer in the channel referencing the card id.
 
 ## Working with humans
 

@@ -121,3 +121,20 @@ def test_classifier_context_is_json_only_and_lists_exact_members(tmp_path):
     assert '{"intent":"inform","recipients":[],"confidence":0}' in instructions
     assert "Route requests" in input_text
     assert "Research this" in input_text
+
+
+def test_channel_section_reports_bound_board(tmp_path):
+    """An explicit binding shows in CHANNEL; no binding reads as none bound."""
+    from hermes_channels_backend.kanban_bridge import BOARD_MAP_SETTING
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_project=ProjectRef(mode="global"))
+    repo.add_member(channel.id, "atlas", activation_policy="always")
+    message = repo.append_message(channel.id, "user", "@atlas plan this", idempotency_key="m1", mentions=["atlas"])
+    turn = Router(repo).plan(message.id)[0]
+
+    # Unbound (no host store in tests): explicit none.
+    assert "board: (none bound)" in ContextBuilder(repo).for_turn(turn)
+
+    repo.set_setting(BOARD_MAP_SETTING, {channel.id: "shared-ops"})
+    assert "board: shared-ops" in ContextBuilder(repo).for_turn(turn)
