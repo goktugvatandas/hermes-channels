@@ -13,7 +13,6 @@ import { CrewApi } from './api'
 import { ChannelNavigationController, channelPath } from './channel-navigation'
 import { CrewPane, PaneUnreadDot } from './components/crew-pane'
 import { GatewayWorker } from './gateway-worker'
-import { installAetherTheme } from './aether-theme'
 import { CrewPage, type CrewView } from './views/crew-page'
 
 const STYLE_ELEMENT_ID = 'hermes-channels-desktop-styles'
@@ -35,7 +34,6 @@ const plugin: HermesPlugin = {
   defaultEnabled: false,
   register(ctx) {
     injectStyles(ctx.onDispose)
-    installAetherTheme()
     const api = new CrewApi(ctx.rest)
     let navigation!: ChannelNavigationController
     const renderChannelsPage = (initialChannelId?: string, initialView?: CrewView) => (

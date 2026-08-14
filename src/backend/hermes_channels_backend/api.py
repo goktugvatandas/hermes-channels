@@ -28,6 +28,7 @@ from .classifier import Classifier
 from .db import CrewDatabase
 from .event_bus import EventBus, EventFrame
 from .hermes_adapter import HermesAdapter
+from .kanban_bridge import BOARD_MAP_SETTING, KanbanBridge, default_board_slug
 from .models import ActivationPolicy, IntentEnvelope, ProjectRef
 from .repositories import (
     ChannelMemberRecord,
@@ -237,6 +238,41 @@ class OnboardingInput(ApiModel):
     profiles: list[str] = Field(min_length=1)
 
 
+class KanbanCardCreate(ApiModel):
+    title: str = Field(min_length=1, max_length=500)
+    body: str | None = Field(default=None, max_length=20_000)
+    assignee: str | None = None
+    priority: int = Field(default=0, ge=-10, le=10)
+    triage: bool = False
+    idempotency_key: str | None = None
+
+
+class KanbanCompleteInput(ApiModel):
+    result: str | None = Field(default=None, max_length=20_000)
+
+
+class KanbanBlockInput(ApiModel):
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class KanbanCommentInput(ApiModel):
+    body: str = Field(min_length=1, max_length=20_000)
+
+
+class KanbanBoardInput(ApiModel):
+    board_slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9-]*$")
+
+
+class KanbanAssignInput(ApiModel):
+    assignee: str | None = None
+
+
+class KanbanCardPatch(ApiModel):
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    body: str | None = Field(default=None, max_length=20_000)
+    priority: int | None = Field(default=None, ge=-10, le=10)
+
+
 class CrewRoute(APIRoute):
     def get_route_handler(self):
         original = super().get_route_handler()
@@ -290,6 +326,7 @@ class BackendServices:
     bus: EventBus | None = None
     scheduler: Scheduler | None = None
     adapter: HermesAdapter | None = None
+    kanban: KanbanBridge | None = None
 
     def load(self) -> "BackendServices":
         if self.database is None:
@@ -302,6 +339,8 @@ class BackendServices:
             ensure_profiles_enabled()
         if self.adapter is None:
             self.adapter = HermesAdapter()
+        if self.kanban is None:
+            self.kanban = KanbanBridge()
         return self
 
 
@@ -435,9 +474,12 @@ def create_router(
     database_path: str | Path | None = None,
     *,
     hermes_adapter: HermesAdapter | None = None,
+    kanban_bridge: KanbanBridge | None = None,
 ) -> APIRouter:
     services = BackendServices(
-        Path(database_path or _default_database_path()), adapter=hermes_adapter
+        Path(database_path or _default_database_path()),
+        adapter=hermes_adapter,
+        kanban=kanban_bridge,
     )
     api = APIRouter(route_class=CrewRoute)
 
@@ -743,6 +785,183 @@ def create_router(
             confidence_threshold=body.confidence_threshold,
         )
         return await get_classifier(channel_id)
+
+    def _resolve_board(service: BackendServices, channel_id: str) -> str | None:
+        """The channel's board slug, or None when nothing is bound yet.
+
+        An explicit binding always wins (and is ensured on disk — the user
+        chose it). The conventional ``channel-<name>`` board is only adopted
+        when it already exists: users with active boards of their own connect
+        those instead of having a board silently created for every channel.
+        """
+
+        assert service.repository is not None and service.kanban is not None
+        channel = service.repository.require_channel(channel_id)
+        overrides = service.repository.get_setting(BOARD_MAP_SETTING) or {}
+        try:
+            bound = overrides.get(channel.id)
+            if bound:
+                service.kanban.ensure_board(bound, display_name=f"#{channel.name}")
+                return bound
+            conventional = default_board_slug(channel.name)
+            return conventional if service.kanban.board_exists(conventional) else None
+        except ModuleNotFoundError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"host kanban store unavailable: {exc}",
+            ) from exc
+
+    def _channel_board(service: BackendServices, channel_id: str) -> str:
+        slug = _resolve_board(service, channel_id)
+        if slug is None:
+            raise HTTPException(
+                status_code=409,
+                detail="this channel has no kanban board yet — create or connect one first",
+            )
+        return slug
+
+    @api.get("/channels/{channel_id}/kanban")
+    async def get_channel_kanban(channel_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None and service.kanban is not None
+        channel = service.repository.require_channel(channel_id)
+        slug = _resolve_board(service, channel_id)
+        if slug is None:
+            return {
+                "bound": False,
+                "suggestedSlug": default_board_slug(channel.name),
+                "boards": service.kanban.list_boards(),
+            }
+        return {"bound": True, **service.kanban.snapshot(slug)}
+
+    @api.get("/channels/{channel_id}/kanban/boards")
+    async def list_kanban_boards(channel_id: str) -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.repository is not None and service.kanban is not None
+        service.repository.require_channel(channel_id)
+        return service.kanban.list_boards()
+
+    @api.put("/channels/{channel_id}/kanban/board")
+    async def put_channel_kanban_board(
+        channel_id: str, body: KanbanBoardInput
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None and service.kanban is not None
+        channel = service.repository.require_channel(channel_id)
+        overrides = service.repository.get_setting(BOARD_MAP_SETTING) or {}
+        if body.board_slug == default_board_slug(channel.name):
+            overrides.pop(channel.id, None)
+            # Binding the conventional slug is the explicit "create my board"
+            # action, so materialize it.
+            service.kanban.ensure_board(body.board_slug, display_name=f"#{channel.name}")
+        else:
+            overrides[channel.id] = body.board_slug
+        service.repository.set_setting(BOARD_MAP_SETTING, overrides)
+        return {"bound": True, **service.kanban.snapshot(_channel_board(service, channel_id))}
+
+    @api.post("/channels/{channel_id}/kanban/cards", status_code=201)
+    async def create_channel_card(
+        channel_id: str, body: KanbanCardCreate
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.create_card(
+            _channel_board(service, channel_id),
+            title=body.title,
+            body=body.body,
+            assignee=body.assignee,
+            priority=body.priority,
+            triage=body.triage,
+            created_by="channels",
+            idempotency_key=body.idempotency_key,
+        )
+
+    @api.get("/channels/{channel_id}/kanban/cards/{task_id}")
+    async def get_channel_card(channel_id: str, task_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.get_card(_channel_board(service, channel_id), task_id)
+
+    @api.post("/channels/{channel_id}/kanban/cards/{task_id}/complete")
+    async def complete_channel_card(
+        channel_id: str, task_id: str, body: KanbanCompleteInput | None = None
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.complete_card(
+            _channel_board(service, channel_id),
+            task_id,
+            result=(body.result if body else None),
+        )
+
+    @api.post("/channels/{channel_id}/kanban/cards/{task_id}/block")
+    async def block_channel_card(
+        channel_id: str, task_id: str, body: KanbanBlockInput | None = None
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.block_card(
+            _channel_board(service, channel_id),
+            task_id,
+            reason=(body.reason if body else None),
+        )
+
+    @api.post("/channels/{channel_id}/kanban/open")
+    async def open_channel_kanban(channel_id: str) -> dict[str, Any]:
+        """Switch the host's current board to this channel's board so the
+        official Kanban page (which renders the current board) shows it."""
+
+        service = loaded()
+        assert service.kanban is not None
+        slug = _channel_board(service, channel_id)
+        service.kanban.switch_current_board(slug)
+        return {"boardSlug": slug}
+
+    @api.patch("/channels/{channel_id}/kanban/cards/{task_id}")
+    async def edit_channel_card(
+        channel_id: str, task_id: str, body: KanbanCardPatch
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        changes = body.model_dump(exclude_unset=True)
+        return service.kanban.edit_card(
+            _channel_board(service, channel_id), task_id, **changes
+        )
+
+    @api.post("/channels/{channel_id}/kanban/cards/{task_id}/assign")
+    async def assign_channel_card(
+        channel_id: str, task_id: str, body: KanbanAssignInput
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.assign_card(
+            _channel_board(service, channel_id), task_id, body.assignee
+        )
+
+    @api.post("/channels/{channel_id}/kanban/cards/{task_id}/unblock")
+    async def unblock_channel_card(channel_id: str, task_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        return service.kanban.unblock_card(_channel_board(service, channel_id), task_id)
+
+    @api.post("/channels/{channel_id}/kanban/cards/{task_id}/comments", status_code=201)
+    async def comment_channel_card(
+        channel_id: str, task_id: str, body: KanbanCommentInput
+    ) -> dict[str, Any]:
+        service = loaded()
+        assert service.repository is not None and service.kanban is not None
+        identity = service.repository.get_setting("user_identity") or {}
+        author = str(identity.get("displayName") or "You")
+        return service.kanban.comment_card(
+            _channel_board(service, channel_id), task_id, author=author, body=body.body
+        )
+
+    @api.delete("/channels/{channel_id}/kanban/cards/{task_id}")
+    async def delete_channel_card(channel_id: str, task_id: str) -> dict[str, Any]:
+        service = loaded()
+        assert service.kanban is not None
+        service.kanban.delete_card(_channel_board(service, channel_id), task_id)
+        return {"ok": True}
 
     @api.get("/channels/{channel_id}/messages")
     async def list_messages(channel_id: str) -> list[dict[str, Any]]:

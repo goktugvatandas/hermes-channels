@@ -112,12 +112,15 @@ export function MemberRoster({ api, channel, profiles, activeProfileIds = [], on
         const subtitle = presented?.role?.trim()
           || (isResponder ? 'Default responder' : 'Channel member')
         return (
-          <article className="group flex items-center gap-2 rounded px-1 py-2 hover:bg-(--ui-surface-secondary)" key={member.profileId}>
+          // Grid with a floored name column: a plain flex row lets the policy
+          // select compress `flex-1 min-w-0` all the way to zero width, which
+          // renders the roster as avatars + dropdowns with no names at all.
+          <article className="group grid grid-cols-[auto_minmax(72px,1fr)_auto_auto] items-center gap-2 rounded px-1 py-2 hover:bg-(--ui-surface-secondary)" key={member.profileId}>
             <MemberAvatar profileId={member.profileId} size="sm" />
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <strong className="truncate text-sm">{presentedName(presentation, member.profileId)}</strong>
-                {working ? <span aria-label="Working now" className="size-2 rounded-full bg-green-500" title="Working now" /> : null}
+                {working ? <span aria-label="Working now" className="size-2 shrink-0 rounded-full bg-green-500" title="Working now" /> : null}
               </div>
               <p className="truncate text-[11px] text-(--ui-text-tertiary)">{working ? 'Working now' : subtitle}</p>
             </div>

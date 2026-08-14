@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.3.0 — 2026-08-15
+
+**Kanban bridge: every channel gets a board.** Channels now surface the host
+Hermes kanban store per channel instead of growing a second card system. Each
+channel maps to one free-standing Hermes board (`channel-<name>` by
+convention, rebindable via `PUT /channels/{id}/kanban/board`), auto-created on
+first open. Because it is the real host store, all fourteen agent kanban tools,
+the dispatcher/worker machinery, and `kanban_notify_subs` keep working
+unchanged — a card filed from a channel is the same card an agent completes
+from its own session.
+
+- New backend module `kanban_bridge.py`: in-process calls into
+  `hermes_cli.kanban_db` (the `hermes_adapter` pattern; injectable bindings
+  keep the package testable without a Hermes install).
+- New routes under `/channels/{id}/kanban`: board snapshot, card create /
+  complete / block / unblock / delete, comments (authored as the workspace
+  identity), and board rebinding. Host-store-unavailable maps to 503, unknown
+  cards to 404, invalid transitions to 422.
+- Desktop: a **Board ⇄ Chat toggle** in the channel header opens a kanban pane
+  in place — lanes for triage/to-do/ready/running/blocked/review/done (empty
+  planning lanes stay hidden), a full **New card** form (title, description,
+  assignee from the channel roster, priority, triage), a details drawer with
+  metadata grid, assignee control, complete/block/unblock/delete, comments,
+  event history, and a 15 s refresh while visible.
+- **Connect existing boards.** Nothing is auto-created: an unbound channel
+  offers "Create board `channel-<name>`" or a picker over the host's existing
+  boards, and a board switcher in the toolbar rebinds any time
+  (`GET /channels/{id}/kanban/boards`, `PUT .../kanban/board`). Users already
+  running Hermes kanban keep their boards.
+- Cards can be (re)assigned from the details modal
+  (`POST .../cards/{id}/assign`); running-claimed cards refuse reassignment
+  with a clear error.
+- **Open in Kanban ↗** jumps from a channel's board pane to the full official
+  Kanban page on that board (`POST .../kanban/open` switches the host's
+  current board — the official page's default scope — then navigates). The
+  in-channel pane stays for quick capture; dispatch, runs, attachments, and
+  diagnostics live one click away in the established UI.
+- Cards are **editable**: `PATCH .../cards/{id}` updates title, description,
+  and priority via the host-sanctioned direct-edit pattern (an `edited`
+  event lands in the card history and the task-updated observer fires); the
+  details modal has an inline Edit mode, and card create/details are both
+  centered modals.
+- **No bundled themes.** The Aether theme (shipped since the hermes-crew era)
+  is removed and nothing replaces it: the plugin renders entirely from the
+  host's theme variables and always follows whatever Hermes theme the user
+  has active. Previously-installed copies in the user-theme store are left
+  untouched.
+
 ## 0.2.0 — 2026-08-14
 
 The hermes-crew → **Hermes Channels** release: project renamed (installs

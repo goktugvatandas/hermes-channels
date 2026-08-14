@@ -139,7 +139,7 @@ describe('channel flow', () => {
     render(<CrewPage api={api} initialView="channels" />)
     await screen.findByRole('region', { name: '#general' })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Channel details' }))
+    fireEvent.click(screen.getByRole('button', { name: /Channel members/ }))
 
     const details = await screen.findByRole('complementary', { name: 'Channel details' })
     expect(within(details).getByRole('region', { name: 'Channel members' })).not.toBeNull()

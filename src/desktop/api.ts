@@ -8,6 +8,8 @@ import type {
   CrewMessage,
   ChannelMember,
   ClassifierConfig,
+  KanbanCard,
+  KanbanSnapshot,
   EventFrame,
   HermesProfile,
   ImageGenerationStatus,
@@ -203,6 +205,97 @@ export class CrewApi {
       `/channels/${encodeURIComponent(channelId)}/members/${encodeURIComponent(profileId)}`,
       'PUT',
       { activationPolicy },
+    )
+  }
+
+  channelKanban(channelId: string): Promise<KanbanSnapshot> {
+    return this.request(`/channels/${encodeURIComponent(channelId)}/kanban`)
+  }
+
+  listKanbanBoards(channelId: string): Promise<Array<{ slug: string; name: string }>> {
+    return this.request(`/channels/${encodeURIComponent(channelId)}/kanban/boards`)
+  }
+
+  openKanbanBoard(channelId: string): Promise<{ boardSlug: string }> {
+    return this.mutate(`/channels/${encodeURIComponent(channelId)}/kanban/open`, 'POST')
+  }
+
+  editKanbanCard(
+    channelId: string,
+    taskId: string,
+    body: { title?: string; body?: string; priority?: number },
+  ): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}`,
+      'PATCH',
+      body,
+    )
+  }
+
+  assignKanbanCard(channelId: string, taskId: string, assignee: string | null): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}/assign`,
+      'POST',
+      { assignee },
+    )
+  }
+
+  rebindKanbanBoard(channelId: string, boardSlug: string): Promise<KanbanSnapshot> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/board`,
+      'PUT',
+      { boardSlug },
+    )
+  }
+
+  createKanbanCard(
+    channelId: string,
+    body: { title: string; body?: string; assignee?: string; priority?: number; triage?: boolean },
+  ): Promise<KanbanCard> {
+    return this.mutate(`/channels/${encodeURIComponent(channelId)}/kanban/cards`, 'POST', body)
+  }
+
+  getKanbanCard(channelId: string, taskId: string): Promise<KanbanCard> {
+    return this.request(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}`,
+    )
+  }
+
+  completeKanbanCard(channelId: string, taskId: string, result?: string): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}/complete`,
+      'POST',
+      { result: result ?? null },
+    )
+  }
+
+  blockKanbanCard(channelId: string, taskId: string, reason?: string): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}/block`,
+      'POST',
+      { reason: reason ?? null },
+    )
+  }
+
+  unblockKanbanCard(channelId: string, taskId: string): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}/unblock`,
+      'POST',
+    )
+  }
+
+  commentKanbanCard(channelId: string, taskId: string, body: string): Promise<KanbanCard> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}/comments`,
+      'POST',
+      { body },
+    )
+  }
+
+  deleteKanbanCard(channelId: string, taskId: string): Promise<{ ok: boolean }> {
+    return this.mutate(
+      `/channels/${encodeURIComponent(channelId)}/kanban/cards/${encodeURIComponent(taskId)}`,
+      'DELETE',
     )
   }
 

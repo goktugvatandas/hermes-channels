@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { CrewApi } from '../api'
 import { ChannelHeader } from '../components/channel-header'
 import { CrewComposer } from '../components/crew-composer'
+import { KanbanBoard } from '../components/kanban-board'
 import { MessageList } from '../components/message-list'
 import { summarizeTurns, type DeliveryState, type TurnSummary } from '../conversation-model'
 import type { ChannelUiSnapshot } from '../channel-ui-state'
@@ -27,6 +28,7 @@ export function ChannelView({ api, channel, profiles, messageRevision, membershi
   const [deliveryById, setDeliveryById] = useState<Record<string, DeliveryState>>({})
   const [pendingTurnIds, setPendingTurnIds] = useState<string[]>([])
   const [memberIds, setMemberIds] = useState<string[]>([])
+  const [pane, setPane] = useState<'chat' | 'board'>('chat')
 
   useEffect(() => {
     let current = true
@@ -52,6 +54,7 @@ export function ChannelView({ api, channel, profiles, messageRevision, membershi
     setMessages([])
     setPendingTurnIds([])
     setDeliveryById({})
+    setPane('chat')
   }, [channel.id])
 
   const pendingTurns = useMemo(() => {
@@ -103,9 +106,15 @@ export function ChannelView({ api, channel, profiles, messageRevision, membershi
 
   return (
     <section aria-label={`#${channel.name}`} className="flex min-h-0 flex-col">
-      <ChannelHeader channel={channel} memberIds={memberIds} onOpenDetails={onOpenDetails} />
-      <MessageList deliveryById={deliveryById} initialScrollTop={uiSnapshot?.scrollTop} key={channel.id} messages={messages} onReply={onOpenThread} onScrollTop={(scrollTop) => onUiSnapshot?.({ scrollTop })} pendingTurns={pendingTurns} profiles={profiles} turnByMessageId={turnByMessageId} />
-      <CrewComposer api={api} channelId={channel.id} onFailed={failed} onNavigate={onNavigate} onPending={pending} onSent={sent} onValueChange={(draft) => onUiSnapshot?.({ draft })} profiles={channelProfiles} value={uiSnapshot?.draft} />
+      <ChannelHeader channel={channel} memberIds={memberIds} onOpenDetails={onOpenDetails} onTogglePane={() => setPane((current) => current === 'chat' ? 'board' : 'chat')} pane={pane} />
+      {pane === 'board' ? (
+        <KanbanBoard api={api} channelId={channel.id} memberIds={memberIds} />
+      ) : (
+        <>
+          <MessageList deliveryById={deliveryById} initialScrollTop={uiSnapshot?.scrollTop} key={channel.id} messages={messages} onReply={onOpenThread} onScrollTop={(scrollTop) => onUiSnapshot?.({ scrollTop })} pendingTurns={pendingTurns} profiles={profiles} turnByMessageId={turnByMessageId} />
+          <CrewComposer api={api} channelId={channel.id} onFailed={failed} onNavigate={onNavigate} onPending={pending} onSent={sent} onValueChange={(draft) => onUiSnapshot?.({ draft })} profiles={channelProfiles} value={uiSnapshot?.draft} />
+        </>
+      )}
       <p aria-live="polite" className="sr-only" role="status">{completionProfile ? `${completionProfile} responded` : ''}</p>
     </section>
   )

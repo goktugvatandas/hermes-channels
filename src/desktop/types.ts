@@ -203,3 +203,80 @@ export interface ChannelSections {
   sections: ChannelSection[]
   assignments: Record<string, string>
 }
+
+export type KanbanCardStatus =
+  | 'triage'
+  | 'todo'
+  | 'scheduled'
+  | 'ready'
+  | 'running'
+  | 'blocked'
+  | 'review'
+  | 'done'
+
+export interface KanbanComment {
+  id: number
+  author: string
+  body: string
+  createdAt: number
+}
+
+export interface KanbanEvent {
+  id: number
+  kind: string
+  payload: Record<string, unknown> | null
+  createdAt: number
+}
+
+export interface KanbanCard {
+  id: string
+  title: string
+  body: string | null
+  status: KanbanCardStatus
+  assignee: string | null
+  priority: number
+  createdBy: string | null
+  projectId: string | null
+  result: string | null
+  blockKind: string | null
+  tenant?: string | null
+  branchName?: string | null
+  workspaceKind?: string | null
+  workspacePath?: string | null
+  modelOverride?: string | null
+  providerOverride?: string | null
+  reasoningEffort?: string | null
+  skills?: string[] | null
+  goalMode?: boolean
+  consecutiveFailures?: number
+  lastFailureError?: string | null
+  maxRuntimeSeconds?: number | null
+  lastHeartbeatAt?: number | null
+  sessionId?: string | null
+  createdAt: number
+  startedAt: number | null
+  completedAt: number | null
+  commentCount?: number
+  comments?: KanbanComment[]
+  events?: KanbanEvent[]
+  parents?: string[]
+  children?: string[]
+  blockReason?: string | null
+}
+
+export interface KanbanBoardInfo {
+  slug: string
+  name: string
+}
+
+export interface KanbanSnapshot {
+  bound: boolean
+  boardSlug?: string
+  boardName?: string
+  statuses?: KanbanCardStatus[]
+  cards?: KanbanCard[]
+  /** Unbound channels: the conventional slug offered for creation. */
+  suggestedSlug?: string
+  /** Unbound channels: existing host boards available to connect. */
+  boards?: KanbanBoardInfo[]
+}
