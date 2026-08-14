@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.3.1 — 2026-08-15
+
+Board polish and the collaboration skill catching up with 0.3.0:
+
+- **All eight status lanes, collapsible.** Triage/To Do/Scheduled/Review are
+  no longer hidden; empty lanes rest as slim vertical rails and any lane can
+  be minimized or expanded manually, persisted per channel — the official
+  board's auto/override model.
+- **channel-collaboration 1.3.0** adds the kanban chapter (pass the channel's
+  board slug explicitly to every kanban tool, never create boards uninvited,
+  file cards for accepted work, keep status honest, reference card ids,
+  re-read cards before acting on them), and turn context now carries a
+  `board:` line in CHANNEL resolved the same way the API resolves bindings.
+- **The skill now actually reaches bots.** Worker turns run under each
+  profile's own HERMES_HOME where the owner-home skill is invisible; the
+  installer and the backend's profile sweep both sync the skill per profile
+  (version-gated, so a same-version local copy is never stomped).
+- Card details open in a centered modal; the New-card form is a modal too;
+  clearer failure hint when the backend predates the UI after an upgrade.
+
 ## 0.3.0 — 2026-08-15
 
 **Kanban bridge: every channel gets a board.** Channels now surface the host

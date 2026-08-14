@@ -33,6 +33,7 @@ _enablement = importlib.util.module_from_spec(_enablement_spec)
 _enablement_spec.loader.exec_module(_enablement)
 enable_plugin_in_config = _enablement.enable_plugin_in_config
 remove_plugin_from_config = _enablement.remove_plugin_from_config
+sync_collaboration_skill = _enablement.sync_collaboration_skill
 
 LEGACY_NAME = "hermes-crew"
 
@@ -127,6 +128,20 @@ def install(home: Path, layout: str = "standalone") -> None:
                 shutil.copy2(entry, destination)
     (home / "channels").mkdir(parents=True, exist_ok=True)
     enable_plugin_in_config(home / "config.yaml")
+    # Worker turns run under each profile's own HERMES_HOME, where the owner
+    # home's skill is invisible — sync the collaboration skill per profile so
+    # bots actually have the guide the response contract points at. The
+    # backend repeats this sweep at runtime for profiles created later.
+    profiles_dir = home / "profiles"
+    if profiles_dir.is_dir():
+        os.environ["HERMES_HOME"] = str(home)
+        synced = sum(
+            1
+            for profile in sorted(profiles_dir.iterdir())
+            if profile.is_dir() and sync_collaboration_skill(profile)
+        )
+        if synced:
+            print(f"channel-collaboration skill synced to {synced} profile(s)")
     print("Hermes Channels installed for owner profile:", home)
     print("Restart or reload Hermes Desktop, enable Hermes Channels, then open Channels from the sidebar.")
 

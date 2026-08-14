@@ -287,8 +287,42 @@ def remove_plugin_from_config(config_path: Path, plugin_name: str) -> bool:
     return changed
 
 
+SKILL_NAME = "channel-collaboration"
+
+_SKILL_VERSION = re.compile(r"^version:\s*([0-9][0-9.]*)\s*$", re.MULTILINE)
+
+
+def _skill_version(skill_md: Path) -> str | None:
+    try:
+        match = _SKILL_VERSION.search(skill_md.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def sync_collaboration_skill(profile_dir: Path) -> bool:
+    """Copy the bundled channel-collaboration skill into one profile.
+
+    Worker turns run under the profile's own HERMES_HOME, so the skill
+    installed in the owner home is invisible to them — without this sync,
+    bots never see the collaboration guide the response contract points at.
+    Synced when the profile copy is missing or carries a different version;
+    a version-matched copy is left alone so local edits survive.
+    """
+
+    source = _hermes_home() / "skills" / PLUGIN_NAME / SKILL_NAME / "SKILL.md"
+    if not source.is_file():
+        return False
+    target = profile_dir / "skills" / SKILL_NAME / "SKILL.md"
+    if target.is_file() and _skill_version(target) == _skill_version(source):
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(target, source.read_text(encoding="utf-8"))
+    return True
+
+
 def ensure_profiles_enabled(profile_names: list[str] | None = None) -> int:
-    """Heal profile configs; cached per process so list calls stay cheap."""
+    """Heal profile configs and skill copies; cached per process."""
 
     healed = 0
     try:
@@ -310,6 +344,8 @@ def ensure_profiles_enabled(profile_names: list[str] | None = None) -> int:
                 if enable_plugin_in_config(config):
                     healed += 1
                     _log.info("enabled %s for profile %s", PLUGIN_NAME, name)
+                if sync_collaboration_skill(profiles_dir / name):
+                    _log.info("synced %s skill to profile %s", SKILL_NAME, name)
                 _healed.add(name)
             except Exception:
                 # Negative-cache: a read-only or broken config should not be
