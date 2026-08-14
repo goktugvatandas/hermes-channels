@@ -176,3 +176,27 @@ describe('KanbanBoard editing', () => {
     }))
   })
 })
+
+
+describe('KanbanBoard lane collapse', () => {
+  it('collapses occupied lanes to a rail and expands them back', async () => {
+    const api = apiStub({
+      channelKanban: vi.fn().mockResolvedValue(snapshot([card({ id: 'a', title: 'Visible card' })])),
+    })
+    render(<KanbanBoard api={api} channelId="channel-collapse-test" />)
+    await waitFor(() => expect(screen.getByText('Visible card')).toBeTruthy())
+
+    fireEvent.click(screen.getByLabelText('Minimize Ready'))
+    expect(screen.queryByText('Visible card')).toBeNull()
+
+    fireEvent.click(screen.getByLabelText('Expand Ready (1)'))
+    await waitFor(() => expect(screen.getByText('Visible card')).toBeTruthy())
+  })
+
+  it('rests empty lanes as rails by default', async () => {
+    const api = apiStub({ channelKanban: vi.fn().mockResolvedValue(snapshot([])) })
+    render(<KanbanBoard api={api} channelId="channel-empty-test" />)
+    await waitFor(() => expect(screen.getByLabelText('Expand Ready (0)')).toBeTruthy())
+    expect(screen.getByLabelText('Expand Triage (0)')).toBeTruthy()
+  })
+})

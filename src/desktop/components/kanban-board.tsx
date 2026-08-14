@@ -52,6 +52,18 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 
 const EMPTY_DRAFT = { title: '', body: '', assignee: '', priority: 0, triage: false }
 
+/** Per-channel lane-collapse overrides; absence = auto (empty lanes collapse
+ *  to a rail, occupied lanes expand) — same model as the official board. */
+const COLLAPSE_KEY = (channelId: string) => `hermes-channels.kanban-collapsed.${channelId}`
+
+function readCollapsed(channelId: string): Record<string, boolean> {
+  try {
+    return JSON.parse(window.localStorage.getItem(COLLAPSE_KEY(channelId)) || '{}')
+  } catch {
+    return {}
+  }
+}
+
 const STATUS_TINT: Record<string, string> = {
   running: 'bg-blue-500/15 text-blue-400',
   blocked: 'bg-red-500/15 text-red-400',
@@ -102,6 +114,23 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
   const [createOpen, setCreateOpen] = useState(false)
   const [draft, setDraft] = useState({ ...EMPTY_DRAFT })
   const [connectSlug, setConnectSlug] = useState('')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    setCollapsed(readCollapsed(channelId))
+  }, [channelId])
+
+  function setLaneCollapsed(laneId: string, value: boolean) {
+    setCollapsed((current) => {
+      const next = { ...current, [laneId]: value }
+      try {
+        window.localStorage.setItem(COLLAPSE_KEY(channelId), JSON.stringify(next))
+      } catch {
+        // Persistence is a convenience; a restricted storage context is fine.
+      }
+      return next
+    })
+  }
 
   const refresh = useCallback(() => {
     return api.channelKanban(channelId)
@@ -393,15 +422,42 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
         <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-5 py-3">
           {LANES.map((lane) => {
             const laneCards = byLane.get(lane.id) || []
+            // Manual override wins; otherwise empty lanes rest as rails.
+            const isCollapsed = collapsed[lane.id] ?? laneCards.length === 0
+            if (isCollapsed) {
+              return (
+                <section aria-label={lane.label} className="shrink-0" key={lane.id}>
+                  <button
+                    aria-expanded="false"
+                    aria-label={`Expand ${lane.label} (${laneCards.length})`}
+                    className="flex h-full w-9 flex-col items-center gap-2 rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-surface-secondary)/40 py-3 transition-colors hover:bg-(--ui-surface-secondary)"
+                    onClick={() => setLaneCollapsed(lane.id, false)}
+                    type="button"
+                  >
+                    <span className={`rounded-full px-1.5 text-[10px] font-semibold ${laneCards.length ? 'bg-(--ui-surface-secondary) text-(--ui-text-primary,inherit)' : 'text-(--ui-text-tertiary)'}`}>{laneCards.length}</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-(--ui-text-secondary)" style={{ writingMode: 'vertical-rl' }}>{lane.label}</span>
+                  </button>
+                </section>
+              )
+            }
             return (
               <section
                 aria-label={lane.label}
                 className="flex w-60 shrink-0 flex-col rounded-xl border border-(--ui-stroke-secondary) bg-(--ui-surface-secondary)/40"
                 key={lane.id}
               >
-                <header className="flex items-center justify-between px-3 py-2">
+                <header className="flex items-center justify-between gap-2 px-3 py-2">
                   <h3 className="text-[11px] font-semibold uppercase tracking-wide text-(--ui-text-secondary)">{lane.label}</h3>
-                  <span className="text-[11px] text-(--ui-text-secondary)">{laneCards.length}</span>
+                  <span className="ml-auto text-[11px] text-(--ui-text-secondary)">{laneCards.length}</span>
+                  <button
+                    aria-label={`Minimize ${lane.label}`}
+                    className="rounded px-1 leading-none text-(--ui-text-tertiary) hover:bg-(--ui-surface-secondary) hover:text-(--ui-text-secondary)"
+                    onClick={() => setLaneCollapsed(lane.id, true)}
+                    title="Minimize lane"
+                    type="button"
+                  >
+                    –
+                  </button>
                 </header>
                 <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2 pb-2">
                   {laneCards.map((card) => (
