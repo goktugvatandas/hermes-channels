@@ -42,6 +42,20 @@ export function PaneUnreadDot({ controller }: { controller: ChannelNavigationCon
 const BOT_MANAGEMENT_PATH = '/channels/bot-management'
 const SETTINGS_PATH = '/channels/settings'
 const EMPTY_SECTIONS: ChannelSections = { sections: [], assignments: {} }
+/** Matches the channel list's reconcile cadence in ChannelNavigationController. */
+const SECTIONS_REFRESH_MS = 10_000
+
+function sectionsEqual(a: ChannelSections, b: ChannelSections): boolean {
+  if (a === b) return true
+  if (a.sections.length !== b.sections.length) return false
+  for (let i = 0; i < a.sections.length; i += 1) {
+    if (a.sections[i].id !== b.sections[i].id || a.sections[i].name !== b.sections[i].name) return false
+  }
+  const aKeys = Object.keys(a.assignments)
+  const bKeys = Object.keys(b.assignments)
+  if (aKeys.length !== bKeys.length) return false
+  return aKeys.every((key) => a.assignments[key] === b.assignments[key])
+}
 const COLLAPSED_KEY = 'hermes-channels.pane-collapsed-v1'
 
 interface CrewPaneProps {
@@ -406,9 +420,21 @@ export function CrewPane({ api, controller }: CrewPaneProps) {
       })
   }, [api])
 
+  // Sections are a workspace-wide document that scripts, bots and other
+  // windows write behind this pane's back, so it is re-read on the same
+  // cadence channels reconcile. Two guards keep the local copy honest: a
+  // fetch that started before a save must not overwrite that save's result
+  // (sequence check), and a poll must never land while a PUT is in flight
+  // (the pending optimistic state is newer than anything the server holds).
+  const sectionsFetchSeq = useRef(0)
+  const sectionsSaving = useRef(0)
   const loadSections = useCallback(() => {
+    const seq = ++sectionsFetchSeq.current
     void api.getChannelSections()
-      .then(setSections)
+      .then((next) => {
+        if (seq !== sectionsFetchSeq.current || sectionsSaving.current > 0) return
+        setSections((current) => (sectionsEqual(current, next) ? current : next))
+      })
       .catch(() => {
         // Grouping is progressive enhancement; a flat list still works.
       })
@@ -416,16 +442,25 @@ export function CrewPane({ api, controller }: CrewPaneProps) {
 
   useEffect(() => {
     loadMembers()
-    loadSections()
-    const timer = setInterval(loadMembers, 60_000)
-    window.addEventListener('focus', loadMembers)
+    const memberTimer = setInterval(loadMembers, 60_000)
+    const sectionTimer = setInterval(loadSections, SECTIONS_REFRESH_MS)
+    const onFocus = () => { loadMembers(); loadSections() }
+    window.addEventListener('focus', onFocus)
     return () => {
-      clearInterval(timer)
-      window.removeEventListener('focus', loadMembers)
+      clearInterval(memberTimer)
+      clearInterval(sectionTimer)
+      window.removeEventListener('focus', onFocus)
     }
   }, [loadMembers, loadSections])
 
   const channels = controller.channelList()
+  // Initial load, and again whenever the channel set changes: programmatic
+  // setups create channels and their sections together, so the grouping is
+  // re-read the moment new channels appear instead of waiting for the poll.
+  const channelKey = channels.map((channel) => channel.id).sort().join('\u0000')
+  useEffect(() => {
+    loadSections()
+  }, [channelKey, loadSections])
   const viewed = controller.viewedChannel()
   // The subscribe/setTick effect re-renders on every controller change, so
   // reading the live total is both simpler and never stale.
@@ -450,7 +485,18 @@ export function CrewPane({ api, controller }: CrewPaneProps) {
 
   function saveSections(next: ChannelSections) {
     setSections(next)
-    void api.putChannelSections(next).then(setSections).catch(loadSections)
+    sectionsSaving.current += 1
+    // Invalidate any fetch already in flight: its response predates this write.
+    sectionsFetchSeq.current += 1
+    void api.putChannelSections(next)
+      .then((saved) => {
+        sectionsSaving.current -= 1
+        setSections(saved)
+      })
+      .catch(() => {
+        sectionsSaving.current -= 1
+        loadSections()
+      })
   }
 
   function assignChannel(channelId: string, sectionId: string | null) {
@@ -647,6 +693,7 @@ export function CrewPane({ api, controller }: CrewPaneProps) {
         {sections.sections.map((section) => (
           <div
             className={`rounded-lg ${dropTarget === section.id ? 'bg-(--ui-accent)/8 outline outline-1 outline-(--ui-accent)/40' : ''}`}
+            data-section={section.id}
             key={section.id}
             {...dropProps(section.id)}
           >

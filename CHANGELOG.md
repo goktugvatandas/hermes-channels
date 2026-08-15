@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.2 — 2026-08-15
+
+Hotfix: **sections written behind the pane's back now show up.** The channel
+sidebar read `/channel-sections` exactly once at mount, so sections and
+assignments created programmatically (scripts, bots, another window, a
+direct `channel_sections` setting write) stayed invisible until Hermes was
+reopened — and the next drag or rename in the UI PUT the stale document back,
+silently erasing them. The pane now re-reads sections whenever the channel
+set changes (setups create channels and their sections together), on window
+focus, and on the same 10 s cadence channels reconcile; a save in flight is
+never overwritten by an older poll response.
+
 ## 0.3.1 — 2026-08-15
 
 Board polish and the collaboration skill catching up with 0.3.0:

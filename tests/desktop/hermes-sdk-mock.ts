@@ -101,3 +101,26 @@ export function Select({ value, onValueChange, children }: {
     items.map((item) => createElement('option', { key: item.value, value: item.value }, item.label as never)),
   )
 }
+
+// ── Context menu / dialog primitives: plain passthroughs. Tests that need
+// menu behaviour assert on the trigger content; the menu body renders inline
+// so its items stay reachable by text. ──
+function passthrough(name: string) {
+  const component = ({ children }: PropsWithChildren): ReactElement =>
+    createElement('div', { 'data-sdk': name }, children)
+  component.displayName = name
+  return component
+}
+
+export const ContextMenu = passthrough('ContextMenu')
+export const ContextMenuTrigger = passthrough('ContextMenuTrigger')
+export const ContextMenuContent = passthrough('ContextMenuContent')
+export function ContextMenuItem({ children, onSelect }: PropsWithChildren<{ onSelect?(): void }>): ReactElement {
+  return createElement('button', { onClick: onSelect, type: 'button' }, children)
+}
+export function Dialog({ children, open }: PropsWithChildren<{ open?: boolean }>): ReactElement | null {
+  return open === false ? null : createElement('div', { 'data-sdk': 'Dialog', role: 'dialog' }, children)
+}
+export const DialogContent = passthrough('DialogContent')
+export const DialogHeader = passthrough('DialogHeader')
+export const DialogTitle = passthrough('DialogTitle')

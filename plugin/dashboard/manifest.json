@@ -1,7 +1,7 @@
 {
   "name": "hermes-channels",
   "label": "Hermes Channels",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Persistent Hermes profiles working together in local channels.",
   "icon": "MessageSquare",
   "tab": {
