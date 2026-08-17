@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+from .card_references import CardReferenceStore
 from .kanban_bridge import BOARD_MAP_SETTING, KanbanBridge, default_board_slug
 from .project_context import resolve_project_context
 from .repositories import CrewRepository, MessageRecord
@@ -65,6 +66,34 @@ class ContextBuilder:
         except Exception:
             return None
 
+    def _card_reference_context(self, board_slug: str | None) -> str:
+        if not board_slug:
+            return ""
+        try:
+            bridge = KanbanBridge(
+                references=CardReferenceStore(self.repository.database)
+            )
+            cards = bridge.snapshot(board_slug).get("cards", [])[:100]
+        except Exception:
+            return ""
+        reference_cards = [
+            card
+            for card in cards
+            if card.get("reference") and card.get("id") and card.get("title")
+        ]
+        lines = [
+            f"- {card['reference']} = {card['id']} — {card['title']}"
+            for card in reference_cards
+        ]
+        if not lines:
+            return ""
+        first = reference_cards[0]
+        instruction = (
+            f"Use {first['reference']} in visible replies; use "
+            f"{first['id']} only in kanban tool calls. Apply the same rule to every mapping below."
+        )
+        return instruction + "\n" + "\n".join(lines)
+
     def for_turn(self, turn: PlannedTurn) -> str:
         message = self.repository.require_message(turn.message_id)
         channel = self.repository.require_channel(turn.channel_id)
@@ -100,13 +129,15 @@ class ContextBuilder:
         # thread containment (reply placement can put answers anywhere).
         origin = self.repository.causal_origin(message.id)
         automated_count = self.repository.causal_tree_agent_count(origin)
+        board_slug = self._channel_board(channel.id, channel.name)
+        card_reference_context = self._card_reference_context(board_slug)
 
         fixed_sections = [
             (
                 "CHANNEL",
                 f"name: #{channel.name}\npurpose: {channel.purpose or '(none)'}\n"
                 f"topic: {channel.topic or '(none)'}\n"
-                f"board: {self._channel_board(channel.id, channel.name) or '(none bound)'}",
+                f"board: {board_slug or '(none bound)'}",
             ),
             (
                 "PARTICIPANTS",
@@ -150,6 +181,8 @@ class ContextBuilder:
             recent_messages: list[MessageRecord], thread_messages: list[MessageRecord]
         ) -> str:
             sections = fixed_sections[:4]
+            if card_reference_context:
+                sections.append(("CARD REFERENCES", card_reference_context))
             sections.extend(
                 [
                     (

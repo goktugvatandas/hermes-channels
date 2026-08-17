@@ -297,7 +297,7 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
   }
 
   const drawerMeta: Array<[string, string]> = openCard ? [
-    ['Card', openCard.id],
+    ['Card', openCard.reference || openCard.id],
     ['Status', openCard.status + (openCard.blockKind ? ` (${openCard.blockKind})` : '')],
     ['Priority', String(openCard.priority ?? 0)],
     ['Created by', openCard.createdBy || '—'],
@@ -467,6 +467,9 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
                       onClick={() => openDetails(card)}
                       type="button"
                     >
+                      {card.reference ? (
+                        <span className="mb-1 inline-flex rounded bg-(--ui-accent)/10 px-1.5 py-0.5 text-[10px] font-semibold text-(--ui-accent)">{card.reference}</span>
+                      ) : null}
                       <p className="text-xs font-medium leading-snug">{card.title}</p>
                       {card.status === 'blocked' && card.lastFailureError ? (
                         <p className="mt-1 truncate text-[10px] text-(--ui-text-danger,#c34043)" title={card.lastFailureError}>{card.lastFailureError}</p>
@@ -511,7 +514,7 @@ export function KanbanBoard({ api, channelId, memberIds = [] }: KanbanBoardProps
               )}
               <div className="mt-1.5 flex items-center gap-2">
                 <StatusChip blockKind={openCard.blockKind} status={openCard.status} />
-                <span className="text-[11px] text-(--ui-text-tertiary)">{openCard.id}</span>
+                <span className="text-[11px] font-semibold text-(--ui-accent)">{openCard.reference || openCard.id}</span>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-1">

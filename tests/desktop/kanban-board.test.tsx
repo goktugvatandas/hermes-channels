@@ -59,7 +59,7 @@ describe('KanbanBoard', () => {
     const api = apiStub({
       channelKanban: vi.fn().mockResolvedValue(
         snapshot([
-          card({ id: 'a', title: 'In ready lane' }),
+          card({ id: 'a', reference: 'SD-1', title: 'In ready lane' }),
           card({ id: 'b', title: 'Being worked', status: 'running' }),
           card({ id: 'c', title: 'Shipped', status: 'done' }),
         ]),
@@ -67,6 +67,7 @@ describe('KanbanBoard', () => {
     })
     render(<KanbanBoard api={api} channelId="channel-1" />)
     await waitFor(() => expect(screen.getByText('In ready lane')).toBeTruthy())
+    expect(screen.getByText('SD-1')).toBeTruthy()
     expect(screen.getByText('Being worked')).toBeTruthy()
     expect(screen.getByText('Shipped')).toBeTruthy()
     expect(screen.getByLabelText('Ready')).toBeTruthy()

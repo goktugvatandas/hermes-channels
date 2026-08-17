@@ -138,3 +138,30 @@ def test_channel_section_reports_bound_board(tmp_path):
 
     repo.set_setting(BOARD_MAP_SETTING, {channel.id: "shared-ops"})
     assert "board: shared-ops" in ContextBuilder(repo).for_turn(turn)
+
+
+def test_agent_context_maps_human_card_references_to_internal_tool_ids(tmp_path, monkeypatch):
+    from hermes_channels_backend.kanban_bridge import BOARD_MAP_SETTING, KanbanBridge
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("seatech", default_project=ProjectRef(mode="global"))
+    repo.add_member(channel.id, "atlas", activation_policy="always")
+    repo.set_setting(BOARD_MAP_SETTING, {channel.id: "channel-seatech"})
+    message = repo.append_message(channel.id, "user", "handle SD-1")
+    turn = Router(repo).plan(message.id)[0]
+
+    monkeypatch.setattr(
+        KanbanBridge,
+        "snapshot",
+        lambda self, slug: {
+            "cards": [
+                {"reference": "SD-1", "id": "t_hidden", "title": "DB truncate"},
+            ]
+        },
+    )
+
+    context = ContextBuilder(repo).for_turn(turn)
+
+    assert "## CARD REFERENCES" in context
+    assert "SD-1 = t_hidden — DB truncate" in context
+    assert "Use SD-1 in visible replies; use t_hidden only in kanban tool calls." in context

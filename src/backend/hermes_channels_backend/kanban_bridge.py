@@ -15,6 +15,8 @@ import importlib
 from types import SimpleNamespace
 from typing import Any
 
+from .card_references import CardReferenceStore
+
 
 #: settings key holding explicit channel-id → board-slug overrides.
 BOARD_MAP_SETTING = "kanban_board_map"
@@ -118,8 +120,13 @@ def _comment(comment: Any) -> dict[str, Any]:
 class KanbanBridge:
     """Channel-scoped operations over one host kanban board."""
 
-    def __init__(self, bindings: Any | None = None):
+    def __init__(
+        self,
+        bindings: Any | None = None,
+        references: CardReferenceStore | None = None,
+    ):
         self._bindings = bindings
+        self.references = references
 
     @property
     def bindings(self) -> Any:
@@ -133,6 +140,17 @@ class KanbanBridge:
             return self.bindings is not None
         except Exception:
             return False
+
+    def _resolve_task_id(self, slug: str, value: str) -> str:
+        if self.references is None:
+            return value
+        return self.references.resolve(slug, value) or value
+
+    def _render_card(self, slug: str, task: Any) -> dict[str, Any]:
+        payload = _card(task)
+        if self.references is not None:
+            payload["reference"] = self.references.ensure_references(slug, [task])[task.id]
+        return payload
 
     def ensure_board(self, slug: str, *, display_name: str | None = None) -> None:
         if not self.bindings.board_exists(board=slug):
@@ -161,6 +179,7 @@ class KanbanBridge:
         self.bindings.set_current_board(slug)
 
     def assign_card(self, slug: str, task_id: str, assignee: str | None) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             try:
                 assigned = self.bindings.assign_task(conn, task_id, assignee)
@@ -168,7 +187,7 @@ class KanbanBridge:
                 raise ValueError(str(exc)) from exc
             if not assigned:
                 raise KeyError(f"unknown card: {task_id}")
-            return _card(self.bindings.get_task(conn, task_id))
+            return self._render_card(slug, self.bindings.get_task(conn, task_id))
 
     def snapshot(self, slug: str) -> dict[str, Any]:
         meta = self.bindings.read_board_metadata(board=slug) or {}
@@ -179,11 +198,18 @@ class KanbanBridge:
                     "SELECT task_id, COUNT(*) FROM task_comments GROUP BY task_id"
                 ).fetchall()
             )
+        references = (
+            self.references.ensure_references(slug, tasks)
+            if self.references is not None
+            else {}
+        )
         cards = []
         for task in tasks:
             if task.status not in CARD_STATUSES:
                 continue
             card = _card(task)
+            if task.id in references:
+                card["reference"] = references[task.id]
             card["commentCount"] = int(counts.get(task.id, 0))
             cards.append(card)
         return {
@@ -194,6 +220,7 @@ class KanbanBridge:
         }
 
     def get_card(self, slug: str, task_id: str) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             task = self.bindings.get_task(conn, task_id)
             if task is None:
@@ -205,7 +232,7 @@ class KanbanBridge:
                 " WHERE parent_id = ? OR child_id = ?",
                 (task_id, task_id),
             ).fetchall()
-        payload = _card(task)
+        payload = self._render_card(slug, task)
         payload["comments"] = [_comment(item) for item in comments]
         payload["events"] = [_event(item) for item in events[-30:]]
         payload["parents"] = [row[0] for row in links if row[1] == task_id]
@@ -246,25 +273,28 @@ class KanbanBridge:
                 idempotency_key=idempotency_key,
             )
             task = self.bindings.get_task(conn, task_id)
-        return _card(task)
+        return self._render_card(slug, task)
 
     def complete_card(self, slug: str, task_id: str, *, result: str | None = None) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             if not self.bindings.complete_task(conn, task_id, result=result):
                 raise ValueError(f"card cannot be completed from its current state: {task_id}")
-            return _card(self.bindings.get_task(conn, task_id))
+            return self._render_card(slug, self.bindings.get_task(conn, task_id))
 
     def block_card(self, slug: str, task_id: str, *, reason: str | None = None) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             if not self.bindings.block_task(conn, task_id, reason=reason):
                 raise ValueError(f"card cannot be blocked from its current state: {task_id}")
-            return _card(self.bindings.get_task(conn, task_id))
+            return self._render_card(slug, self.bindings.get_task(conn, task_id))
 
     def unblock_card(self, slug: str, task_id: str) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             if not self.bindings.unblock_task(conn, task_id):
                 raise ValueError(f"card is not blocked: {task_id}")
-            return _card(self.bindings.get_task(conn, task_id))
+            return self._render_card(slug, self.bindings.get_task(conn, task_id))
 
     def edit_card(
         self,
@@ -283,6 +313,7 @@ class KanbanBridge:
         record an ``edited`` event to keep the card's history honest.
         """
 
+        task_id = self._resolve_task_id(slug, task_id)
         changes: dict[str, Any] = {}
         if title is not None:
             if not title.strip():
@@ -312,14 +343,16 @@ class KanbanBridge:
                     (task_id, _json.dumps({"fields": sorted(changes)}), int(_time.time())),
                 )
             self.bindings.notify_task_updated(conn, task_id, tuple(changes))
-            return _card(self.bindings.get_task(conn, task_id))
+            return self._render_card(slug, self.bindings.get_task(conn, task_id))
 
     def comment_card(self, slug: str, task_id: str, *, author: str, body: str) -> dict[str, Any]:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             self.bindings.add_comment(conn, task_id, author, body)
         return self.get_card(slug, task_id)
 
     def delete_card(self, slug: str, task_id: str) -> None:
+        task_id = self._resolve_task_id(slug, task_id)
         with self.bindings.connect_closing(board=slug) as conn:
             if not self.bindings.delete_task(conn, task_id):
                 raise KeyError(f"unknown card: {task_id}")

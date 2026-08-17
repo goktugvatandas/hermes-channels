@@ -16,6 +16,8 @@ REQUIRED_TABLES = {
     "member_presentation",
     "message_recipients",
     "messages",
+    "kanban_card_references",
+    "kanban_reference_counters",
     "pinned_context",
     "schema_migrations",
     "session_bindings",

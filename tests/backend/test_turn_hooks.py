@@ -259,5 +259,7 @@ def test_plugin_registers_durable_channel_lifecycle_hooks():
         "on_session_end",
         "on_stream_start",
         "on_stream_end",
+        "transform_tool_result",
+        "pre_tool_call",
     }
     assert context.platforms[0]["name"] == "channels"

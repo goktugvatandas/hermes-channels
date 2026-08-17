@@ -25,6 +25,7 @@ from .avatar_generation import (
     user_avatar_prompt,
 )
 from .classifier import Classifier
+from .card_references import CardReferenceStore
 from .db import CrewDatabase
 from .event_bus import EventBus, EventFrame
 from .hermes_adapter import HermesAdapter
@@ -340,7 +341,8 @@ class BackendServices:
         if self.adapter is None:
             self.adapter = HermesAdapter()
         if self.kanban is None:
-            self.kanban = KanbanBridge()
+            assert self.database is not None
+            self.kanban = KanbanBridge(references=CardReferenceStore(self.database))
         return self
 
 

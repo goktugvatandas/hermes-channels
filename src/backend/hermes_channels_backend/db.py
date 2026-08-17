@@ -356,6 +356,30 @@ FROM activity_events e;
 """
 
 
+MIGRATION_7 = """
+-- Stable human-facing references (SD-1, CR-1, …) overlay Hermes' opaque
+-- internal task ids without changing the host kanban schema. Mappings survive
+-- card deletion so numbers are never reused.
+CREATE TABLE IF NOT EXISTS kanban_card_references (
+    board_slug TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    prefix TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    reference TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (board_slug, task_id),
+    UNIQUE (board_slug, sequence)
+);
+CREATE INDEX IF NOT EXISTS idx_kanban_card_references_board
+    ON kanban_card_references(board_slug, sequence);
+
+CREATE TABLE IF NOT EXISTS kanban_reference_counters (
+    prefix TEXT PRIMARY KEY,
+    next_sequence INTEGER NOT NULL
+);
+"""
+
+
 class CrewDatabase:
     """Owns safe SQLite connections and forward-only Channels migrations."""
 
@@ -432,4 +456,13 @@ class CrewDatabase:
                 connection.execute(
                     "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
                     (6, int(time.time() * 1000)),
+                )
+            applied_7 = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = 7"
+            ).fetchone()
+            if applied_7 is None:
+                connection.executescript(MIGRATION_7)
+                connection.execute(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (7, int(time.time() * 1000)),
                 )

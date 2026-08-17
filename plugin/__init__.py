@@ -20,6 +20,10 @@ def register(ctx):
     register_hook = getattr(ctx, "register_hook", None)
     if register_hook is not None:
         _ensure_backend_importable()
+        from hermes_channels_backend.card_references import (
+            annotate_kanban_tool_result,
+            translate_kanban_tool_args,
+        )
         from hermes_channels_backend.turn_hooks import (
             on_channel_session_end,
             on_channel_stream_boundary,
@@ -30,6 +34,8 @@ def register(ctx):
         register_hook("on_session_end", on_channel_session_end)
         register_hook("on_stream_start", on_channel_stream_boundary)
         register_hook("on_stream_end", on_channel_stream_boundary)
+        register_hook("transform_tool_result", annotate_kanban_tool_result)
+        register_hook("pre_tool_call", translate_kanban_tool_args)
 
     register_platform = getattr(ctx, "register_platform", None)
     if register_platform is None:

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 — 2026-08-17
+
+Cards now have stable human-facing references per work area: `SD-#`, `TO-#`,
+`CR-#`, `KM-#`, `OS-#`, `HQ-#`, and `CD-#`. Hermes' opaque `t_…` ids remain
+internal. References are monotonic and never reused, appear throughout the
+Channels board, are injected into channel context, and are added to kanban tool
+results through `transform_tool_result` so bots use the same names humans see.
+
 ## 0.3.3 — 2026-08-17
 
 Channel replies are now finalized by Hermes' host-owned lifecycle hooks rather

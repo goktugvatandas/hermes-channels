@@ -1,7 +1,7 @@
 ---
 name: channel-collaboration
 description: "How to collaborate in Hermes Channels: the intent envelope, reply placement, routing budgets, threads, project scope, and the channel kanban board."
-version: 1.3.0
+version: 1.4.0
 author: Hermes Channels
 license: MIT
 platforms: [linux, macos, windows]
@@ -119,13 +119,16 @@ Rules:
   from the Board pane. Track state in your messages instead.
 - **File cards for accepted multi-step work** (`kanban_create`), keep their
   status honest (`kanban_complete` with a result, `kanban_block` with a
-  reason, `kanban_comment` for progress), and reference card ids
-  (`t_…`) in your visible messages so humans and observer bots can follow.
+  reason, and `kanban_comment` for progress).
+- **Use human card references in visible messages.** Kanban tool results and the
+  CARD REFERENCES context map expose stable names such as `SD-1` or `CR-4`.
+  Show those to humans; keep opaque `t_…` ids internal and use them only when a
+  kanban tool call requires the underlying id.
 - Card titles and descriptions may be edited by humans between your turns,
   and an `edited` event appears in the card history — re-read a card
   (`kanban_show`) before acting on stale details.
 - A good `result` message pairs with its card: complete the card with the
-  outcome, then answer in the channel referencing the card id.
+  outcome, then answer in the channel using its human reference.
 
 ## Working with humans
 

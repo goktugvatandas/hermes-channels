@@ -230,6 +230,7 @@ export interface KanbanEvent {
 
 export interface KanbanCard {
   id: string
+  reference?: string
   title: string
   body: string | null
   status: KanbanCardStatus
