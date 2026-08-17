@@ -23,6 +23,171 @@ def test_restart_marks_orphaned_running_turn_interrupted(tmp_path):
     assert recovered.retry_of is None
 
 
+def test_restart_recovers_a_persisted_final_response_before_interrupting(tmp_path):
+    """A renderer/process crash after the model finished must not lose the reply."""
+    import os
+    from pathlib import Path
+    import sqlite3
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_responder_profile="atlas")
+    repo.add_member(channel.id, "atlas")
+    message = repo.append_message(channel.id, "user", "build it")
+    scheduler = Scheduler(repo)
+    turn = scheduler.enqueue(Router(repo).plan(message.id)[0])
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(
+        turn.id,
+        runtime_session_id="runtime-gone",
+        stored_session_id="stored-finished",
+    )
+
+    profile_home = Path(os.environ["HERMES_HOME"]) / "profiles" / "atlas"
+    profile_home.mkdir(parents=True)
+    with sqlite3.connect(profile_home / "state.db") as connection:
+        connection.execute(
+            "create table messages (id integer primary key, session_id text, role text, "
+            "content text, finish_reason text, timestamp real)"
+        )
+        connection.execute(
+            "insert into messages(session_id, role, content, finish_reason, timestamp) "
+            "values (?, 'assistant', ?, 'stop', ?)",
+            (
+                "stored-finished",
+                "Recovered answer\n\n"
+                '[[hermes-channels:intent {"schemaVersion":1,"intent":"result"}]]',
+                turn.created_at / 1000 + 1,
+            ),
+        )
+
+    assert scheduler.reconcile_startup(set(), stale_after_ms=0) == []
+    recovered = scheduler.get(turn.id)
+    assert recovered.state == "completed"
+    assert repo.require_message(recovered.result_message_id).content == "Recovered answer"
+
+
+def test_restart_recovers_multi_message_prose_plus_trailing_marker(tmp_path):
+    import os
+    from pathlib import Path
+    import sqlite3
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_responder_profile="atlas")
+    repo.add_member(channel.id, "atlas")
+    message = repo.append_message(channel.id, "user", "build it")
+    scheduler = Scheduler(repo)
+    turn = scheduler.enqueue(Router(repo).plan(message.id)[0])
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(
+        turn.id,
+        runtime_session_id="runtime-gone",
+        stored_session_id="stored-multi",
+    )
+
+    profile_home = Path(os.environ["HERMES_HOME"]) / "profiles" / "atlas"
+    profile_home.mkdir(parents=True)
+    marker = '[[hermes-channels:intent {"schemaVersion":1,"intent":"result"}]]'
+    with sqlite3.connect(profile_home / "state.db") as connection:
+        connection.execute(
+            "create table messages (id integer primary key, session_id text, role text, "
+            "content text, finish_reason text, timestamp real)"
+        )
+        connection.executemany(
+            "insert into messages(session_id, role, content, finish_reason, timestamp) "
+            "values (?, ?, ?, ?, ?)",
+            [
+                ("stored-multi", "user", "build it", None, turn.created_at / 1000),
+                ("stored-multi", "assistant", "Completed work", "tool_calls", turn.created_at / 1000 + 1),
+                ("stored-multi", "tool", "tool result", None, turn.created_at / 1000 + 2),
+                ("stored-multi", "assistant", marker, "stop", turn.created_at / 1000 + 3),
+            ],
+        )
+
+    assert scheduler.reconcile_startup(set(), stale_after_ms=0) == []
+    recovered = scheduler.get(turn.id)
+    assert recovered.state == "completed"
+    assert repo.require_message(recovered.result_message_id).content == "Completed work"
+
+
+def test_restart_never_replays_a_previous_response_from_a_reused_session(tmp_path):
+    import os
+    from pathlib import Path
+    import sqlite3
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_responder_profile="atlas")
+    repo.add_member(channel.id, "atlas")
+    message = repo.append_message(channel.id, "user", "new request")
+    scheduler = Scheduler(repo)
+    turn = scheduler.enqueue(Router(repo).plan(message.id)[0])
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(
+        turn.id,
+        runtime_session_id="runtime-gone",
+        stored_session_id="reused-session",
+    )
+
+    profile_home = Path(os.environ["HERMES_HOME"]) / "profiles" / "atlas"
+    profile_home.mkdir(parents=True)
+    with sqlite3.connect(profile_home / "state.db") as connection:
+        connection.execute(
+            "create table messages (id integer primary key, session_id text, role text, "
+            "content text, finish_reason text, timestamp real)"
+        )
+        connection.execute(
+            "insert into messages(session_id, role, content, finish_reason, timestamp) "
+            "values (?, 'assistant', 'Prior answer', 'stop', ?)",
+            ("reused-session", turn.created_at / 1000 - 1),
+        )
+
+    assert scheduler.reconcile_startup(set(), stale_after_ms=0) == [turn.id]
+    assert scheduler.get(turn.id).state == "interrupted"
+    with repo.database.connect() as connection:
+        assert connection.execute(
+            "select count(*) from messages where parent_message_id = ?",
+            (turn.trigger_message_id,),
+        ).fetchone()[0] == 0
+
+
+def test_restart_does_not_finalize_stop_followed_by_later_turn_activity(tmp_path):
+    import os
+    from pathlib import Path
+    import sqlite3
+
+    repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))
+    channel = repo.create_channel("general", default_responder_profile="atlas")
+    repo.add_member(channel.id, "atlas")
+    message = repo.append_message(channel.id, "user", "verify before finishing")
+    scheduler = Scheduler(repo)
+    turn = scheduler.enqueue(Router(repo).plan(message.id)[0])
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(
+        turn.id,
+        runtime_session_id="runtime-gone",
+        stored_session_id="continued-session",
+    )
+
+    profile_home = Path(os.environ["HERMES_HOME"]) / "profiles" / "atlas"
+    profile_home.mkdir(parents=True)
+    with sqlite3.connect(profile_home / "state.db") as connection:
+        connection.execute(
+            "create table messages (id integer primary key, session_id text, role text, "
+            "content text, finish_reason text, timestamp real)"
+        )
+        connection.executemany(
+            "insert into messages(session_id, role, content, finish_reason, timestamp) "
+            "values (?, ?, ?, ?, ?)",
+            [
+                ("continued-session", "user", "verify", None, turn.created_at / 1000),
+                ("continued-session", "assistant", "Provisional answer", "stop", turn.created_at / 1000 + 1),
+                ("continued-session", "tool", "verification still running", None, turn.created_at / 1000 + 2),
+            ],
+        )
+
+    assert scheduler.reconcile_startup(set(), stale_after_ms=0) == [turn.id]
+    assert scheduler.get(turn.id).state == "interrupted"
+
+
 def test_restart_keeps_a_confirmed_runtime_running(tmp_path):
     """A runtime confirmed by Hermes must not be interrupted during recovery."""
     repo = CrewRepository(CrewDatabase(tmp_path / "channels.db"))

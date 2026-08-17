@@ -1,3 +1,8 @@
 name: hermes-channels
-version: "0.3.2"
+version: "0.3.3"
 description: Local multi-profile channels for Hermes Desktop
+provides_hooks:
+  - post_llm_call
+  - on_session_end
+  - on_stream_start
+  - on_stream_end

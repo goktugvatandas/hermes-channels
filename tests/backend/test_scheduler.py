@@ -60,6 +60,39 @@ def test_lifecycle_transitions_and_gateway_events_share_an_ordered_journal(tmp_p
     assert repo.require_message(scheduler.get(turn.id).result_message_id).content == "Done"
 
 
+def test_concurrent_completion_publishes_one_message_and_one_event(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    repo, scheduler, turn = _scheduler_with_turn(tmp_path)
+    scheduler.claim("desktop-a")
+    scheduler.bind_session(turn.id, runtime_session_id="runtime-1", stored_session_id="s-1")
+
+    def complete():
+        return scheduler.complete(
+            turn.id,
+            visible_text="Done",
+            envelope=IntentEnvelope(intent="result"),
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: complete(), range(2)))
+
+    assert {result.result_message_id for result in results} == {
+        scheduler.get(turn.id).result_message_id
+    }
+    with repo.database.connect() as connection:
+        message_count = connection.execute(
+            "select count(*) from messages where idempotency_key = ?",
+            (f"result:{turn.id}",),
+        ).fetchone()[0]
+        completed_events = connection.execute(
+            "select count(*) from activity_events where turn_id = ? and type = 'completed'",
+            (turn.id,),
+        ).fetchone()[0]
+    assert message_count == 1
+    assert completed_events == 1
+
+
 def test_failed_completion_does_not_archive_a_still_running_session(tmp_path, monkeypatch):
     repo, scheduler, turn = _scheduler_with_turn(tmp_path)
     scheduler.claim("desktop-a")

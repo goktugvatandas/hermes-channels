@@ -34,6 +34,7 @@ _enablement_spec.loader.exec_module(_enablement)
 enable_plugin_in_config = _enablement.enable_plugin_in_config
 remove_plugin_from_config = _enablement.remove_plugin_from_config
 sync_collaboration_skill = _enablement.sync_collaboration_skill
+sync_plugin_bundle = _enablement.sync_plugin_bundle
 
 LEGACY_NAME = "hermes-crew"
 
@@ -135,13 +136,18 @@ def install(home: Path, layout: str = "standalone") -> None:
     profiles_dir = home / "profiles"
     if profiles_dir.is_dir():
         os.environ["HERMES_HOME"] = str(home)
-        synced = sum(
-            1
-            for profile in sorted(profiles_dir.iterdir())
-            if profile.is_dir() and sync_collaboration_skill(profile)
-        )
-        if synced:
-            print(f"channel-collaboration skill synced to {synced} profile(s)")
+        synced_skills = 0
+        synced_plugins = 0
+        for profile in sorted(profiles_dir.iterdir()):
+            if not profile.is_dir():
+                continue
+            enable_plugin_in_config(profile / "config.yaml")
+            synced_plugins += int(sync_plugin_bundle(profile))
+            synced_skills += int(sync_collaboration_skill(profile))
+        if synced_plugins:
+            print(f"hermes-channels plugin synced to {synced_plugins} profile(s)")
+        if synced_skills:
+            print(f"channel-collaboration skill synced to {synced_skills} profile(s)")
     print("Hermes Channels installed for owner profile:", home)
     print("Restart or reload Hermes Desktop, enable Hermes Channels, then open Channels from the sidebar.")
 
@@ -156,6 +162,18 @@ def uninstall(home: Path, purge_data: bool) -> None:
     ):
         if target.exists():
             shutil.rmtree(target)
+    profiles_dir = home / "profiles"
+    if profiles_dir.is_dir():
+        for profile in profiles_dir.iterdir():
+            if not profile.is_dir():
+                continue
+            profile_plugin = profile / "plugins" / "hermes-channels"
+            if profile_plugin.exists():
+                shutil.rmtree(profile_plugin)
+            profile_config = profile / "config.yaml"
+            if profile_config.exists():
+                remove_plugin_from_config(profile_config, "hermes-channels")
+
     # Remove only the skill leaves this bundle vendors; user-added skills in
     # the same category are preserved (and the category dir if non-empty).
     skills_target = home / "skills" / "hermes-channels"

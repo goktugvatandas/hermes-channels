@@ -42,6 +42,8 @@ def test_install_is_idempotent_and_preserves_owner_data(tmp_path):
     assert (home / "plugins" / "hermes-channels" / "dashboard" / "plugin_api.py").is_file()
     assert (home / "plugins" / "hermes-channels" / "dashboard" / "dist" / "index.js").is_file()
     assert (home / "plugins" / "hermes-channels" / "dashboard" / "hermes_channels_backend" / "api.py").is_file()
+    assert (member / "plugins" / "hermes-channels" / "dashboard" / "hermes_channels_backend" / "turn_hooks.py").is_file()
+    assert "hermes-channels" in (member / "config.yaml").read_text(encoding="utf-8")
     config = (home / "config.yaml").read_text(encoding="utf-8")
     assert config.count("- existing") == 1
     assert config.count("- hermes-channels") == 1
@@ -51,6 +53,8 @@ def test_install_is_idempotent_and_preserves_owner_data(tmp_path):
     _run(home, "--uninstall")
     assert not (home / "desktop-plugins" / "hermes-channels").exists()
     assert not (home / "plugins" / "hermes-channels").exists()
+    assert not (member / "plugins" / "hermes-channels").exists()
+    assert "hermes-channels" not in (member / "config.yaml").read_text(encoding="utf-8")
     assert data.read_bytes() == b"existing-data"
     assert "hermes-channels" not in (home / "config.yaml").read_text(encoding="utf-8")
 

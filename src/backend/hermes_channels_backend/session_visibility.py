@@ -35,6 +35,79 @@ def _state_db(profile_id: str) -> Path | None:
     return None
 
 
+def read_completed_response_from_db(
+    db_path: Path,
+    stored_session_id: str,
+    *,
+    not_before_ms: int | None = None,
+) -> str:
+    """Assemble the completed current-turn response from one profile transcript."""
+
+    try:
+        import sqlite3
+
+        with sqlite3.connect(db_path) as connection:
+            query = """SELECT role, content, finish_reason FROM messages
+                       WHERE session_id = ?"""
+            params: list[object] = [stored_session_id]
+            if not_before_ms is not None:
+                query += " AND timestamp >= ?"
+                params.append(not_before_ms / 1000)
+            query += " ORDER BY id"
+            rows = connection.execute(query, params).fetchall()
+    except Exception:
+        _log.debug(
+            "channel response transcript read skipped for %s",
+            stored_session_id,
+            exc_info=True,
+        )
+        return ""
+    if not rows:
+        return ""
+    last_user = max(
+        (index for index, row in enumerate(rows) if row[0] == "user"),
+        default=-1,
+    )
+    current_turn = rows[last_user + 1 :]
+    if not current_turn:
+        return ""
+    final = current_turn[-1]
+    if final[0] != "assistant" or final[2] != "stop" or not final[1]:
+        return ""
+    parts = [
+        str(row[1]).strip()
+        for row in current_turn
+        if row[0] == "assistant" and row[1] and str(row[1]).strip()
+    ]
+    return "\n\n".join(parts)
+
+
+def read_completed_response(
+    profile_id: str | None,
+    stored_session_id: str | None,
+    *,
+    not_before_ms: int | None = None,
+) -> str:
+    """Return a persisted final assistant response, never an interim/tool step.
+
+    ``finish_reason='stop'`` is the durable proof that the model completed its
+    final answer before a renderer or process disappeared. Missing/older schema
+    variants fail closed to an empty response so unfinished work is never
+    replayed as if it succeeded.
+    """
+
+    if not profile_id or not stored_session_id:
+        return ""
+    db_path = _state_db(profile_id)
+    if db_path is None:
+        return ""
+    return read_completed_response_from_db(
+        db_path,
+        stored_session_id,
+        not_before_ms=not_before_ms,
+    )
+
+
 def archive_stored_session(
     profile_id: str | None, stored_session_id: str | None
 ) -> bool:

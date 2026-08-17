@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.3 — 2026-08-17
+
+Channel replies are now finalized by Hermes' host-owned lifecycle hooks rather
+than depending on a Desktop renderer staying alive long enough to relay the
+last `message.complete` event. `post_llm_call` durably completes the bound
+channel turn inside the agent process, `on_session_end` recovers from the
+persisted transcript as a second backstop, the stale-turn reconciler recovers a
+finished transcript after a process crash before marking work interrupted, and
+the new stream start/end hooks provide independent liveness beats. The Desktop
+event bridge remains for live progress and compatibility; duplicate completion
+is now explicitly idempotent. The installer/runtime syncs the plugin bundle
+into every named profile so profile-scoped Hermes hook managers load the same
+durable completion hooks.
+
 ## 0.3.2 — 2026-08-15
 
 Hotfix: **sections written behind the pane's back now show up.** The channel

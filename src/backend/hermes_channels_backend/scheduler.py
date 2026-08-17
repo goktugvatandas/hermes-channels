@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 import json
+import logging
 import sqlite3
 import time
 from typing import Any, Literal
@@ -12,9 +13,13 @@ from .context_builder import ContextBuilder
 from .event_bus import EventBus, EventFrame
 from .models import DispatchClaim, IntentEnvelope
 from .project_context import project_key, resolve_project_context, resolve_scope_id
-from .session_visibility import archive_stored_session
+from .intent import parse_agent_output
+from .session_visibility import archive_stored_session, read_completed_response
 from .repositories import CrewRepository
 from .routing import PlannedTurn, Router
+
+
+_log = logging.getLogger(__name__)
 
 
 TurnState = Literal[
@@ -326,8 +331,16 @@ class Scheduler:
         *,
         visible_text: str,
         envelope: IntentEnvelope,
+        source: str = "desktop",
     ) -> TurnRecord:
         turn = self.get(turn_id)
+        # The host-owned post_llm_call hook and the Desktop gateway-event bridge
+        # intentionally race to finalize the same channel turn. Completion is an
+        # idempotent fact: once a durable result exists, later observers must
+        # acknowledge it rather than turn a successful delivery into an error.
+        if turn.state == "completed" and turn.result_message_id:
+            return turn
+        self._require_transition(turn.state, "completed")
         trigger = self.repository.require_message(turn.trigger_message_id)
         # Placement: auto answers where the question was asked; thread starts
         # or continues a thread under the trigger; channel posts to the
@@ -362,18 +375,32 @@ class Scheduler:
         )
         now = _now_ms()
         with self.repository.database.connect() as connection:
-            self._require_transition(turn.state, "completed")
-            connection.execute(
+            updated = connection.execute(
                 """UPDATE turns SET state = 'completed', result_message_id = ?,
-                       completed_at = ?, updated_at = ? WHERE id = ?""",
-                (result.id, now, now, turn_id),
+                       completed_at = ?, updated_at = ?
+                   WHERE id = ? AND state = ?""",
+                (result.id, now, now, turn_id, turn.state),
             )
+            if updated.rowcount != 1:
+                current = connection.execute(
+                    "SELECT * FROM turns WHERE id = ?", (turn_id,)
+                ).fetchone()
+                if (
+                    current is not None
+                    and current["state"] == "completed"
+                    and current["result_message_id"]
+                ):
+                    return self._turn(current)
+                if current is None:
+                    raise KeyError(f"unknown turn: {turn_id}")
+                self._require_transition(current["state"], "completed")
+                raise RuntimeError(f"turn {turn_id} changed during completion")
             frame = self._insert_event(
                 connection,
                 turn.channel_id,
                 turn_id,
                 "completed",
-                {"messageId": result.id, "intent": envelope.intent},
+                {"messageId": result.id, "intent": envelope.intent, "source": source},
                 now,
             )
         self.event_bus.publish(frame)
@@ -499,6 +526,35 @@ class Scheduler:
             note,
         )
 
+    def _recover_persisted_completion(self, turn: TurnRecord) -> bool:
+        """Finalize a response that reached the profile transcript before a crash."""
+
+        response = read_completed_response(
+            turn.profile_id,
+            turn.stored_session_id,
+            not_before_ms=turn.created_at,
+        )
+        if not response:
+            return False
+        visible_text, envelope = parse_agent_output(response)
+        if not visible_text:
+            return False
+        try:
+            self.complete(
+                turn.id,
+                visible_text=visible_text,
+                envelope=envelope,
+                source="transcript_recovery",
+            )
+            return True
+        except Exception:
+            _log.warning(
+                "could not recover persisted channel response for turn %s",
+                turn.id,
+                exc_info=True,
+            )
+            return False
+
     def reconcile_startup(
         self,
         active_runtime_ids: set[str],
@@ -536,7 +592,14 @@ class Scheduler:
                 continue
             if row["last_activity_at"] > cutoff:
                 continue
-            self._terminal_transition(self._turn(row), "interrupted", {})
+            turn = self._turn(row)
+            # The agent may have durably persisted its final assistant message
+            # just before the renderer/backend disappeared. Recover that fact
+            # before classifying the orphan as interrupted; never rerun tools or
+            # duplicate side effects merely because the completion event was lost.
+            if self._recover_persisted_completion(turn):
+                continue
+            self._terminal_transition(turn, "interrupted", {})
             interrupted.append(row["id"])
         return interrupted
 

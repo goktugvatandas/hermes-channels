@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -287,6 +288,58 @@ def remove_plugin_from_config(config_path: Path, plugin_name: str) -> bool:
     return changed
 
 
+PLUGIN_VERSION_PATTERN = re.compile(
+    r'^version:\s*["\']?([^"\'\s]+)["\']?\s*$', re.MULTILINE
+)
+
+
+def _plugin_version(plugin_dir: Path) -> str | None:
+    try:
+        match = PLUGIN_VERSION_PATTERN.search(
+            (plugin_dir / "plugin.yaml").read_text(encoding="utf-8")
+        )
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def sync_plugin_bundle(profile_dir: Path) -> bool:
+    """Install the owner plugin into a profile so its hook manager can load it."""
+
+    source = _hermes_home() / "plugins" / PLUGIN_NAME
+    if not (source / "plugin.yaml").is_file():
+        return False
+    target = profile_dir / "plugins" / PLUGIN_NAME
+    source_version = _plugin_version(source)
+    if source_version and _plugin_version(target) == source_version:
+        return False
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{PLUGIN_NAME}-sync-", dir=target.parent
+    ) as temporary:
+        staged = Path(temporary) / PLUGIN_NAME
+        shutil.copytree(
+            source,
+            staged,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+        backup = target.with_name(f".{PLUGIN_NAME}-previous")
+        if backup.exists():
+            shutil.rmtree(backup)
+        if target.exists():
+            target.replace(backup)
+        try:
+            staged.replace(target)
+        except Exception:
+            if backup.exists() and not target.exists():
+                backup.replace(target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+    return True
+
+
 SKILL_NAME = "channel-collaboration"
 
 _SKILL_VERSION = re.compile(r"^version:\s*([0-9][0-9.]*)\s*$", re.MULTILINE)
@@ -322,7 +375,7 @@ def sync_collaboration_skill(profile_dir: Path) -> bool:
 
 
 def ensure_profiles_enabled(profile_names: list[str] | None = None) -> int:
-    """Heal profile configs and skill copies; cached per process."""
+    """Heal profile configs, plugin bundles, and skill copies; cached per process."""
 
     healed = 0
     try:
@@ -344,6 +397,8 @@ def ensure_profiles_enabled(profile_names: list[str] | None = None) -> int:
                 if enable_plugin_in_config(config):
                     healed += 1
                     _log.info("enabled %s for profile %s", PLUGIN_NAME, name)
+                if sync_plugin_bundle(profiles_dir / name):
+                    _log.info("synced %s plugin to profile %s", PLUGIN_NAME, name)
                 if sync_collaboration_skill(profiles_dir / name):
                     _log.info("synced %s skill to profile %s", SKILL_NAME, name)
                 _healed.add(name)
