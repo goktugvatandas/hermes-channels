@@ -228,6 +228,16 @@ export interface KanbanEvent {
   createdAt: number
 }
 
+export interface CardPrefixConfiguration {
+  boardSlug: string
+  boardName: string
+  prefix: string
+  generatedPrefix: string
+  customized: boolean
+  cardCount: number
+  migratedCards?: number
+}
+
 export interface KanbanCard {
   id: string
   reference?: string

@@ -135,6 +135,10 @@ class RoutingDefaultsPatch(ApiModel):
     max_concurrency: int | None = Field(default=None, ge=1, le=64)
 
 
+class CardPrefixPatch(ApiModel):
+    prefix: str | None = Field(default=None, max_length=8)
+
+
 class UserIdentityPatch(ApiModel):
     display_name: str | None = Field(default=None, max_length=120)
     avatar: str | None = Field(default=None, max_length=_AVATAR_MAX_CHARS)
@@ -1181,6 +1185,46 @@ def create_router(
             "channel_sections", document.model_dump(mode="json", by_alias=True)
         )
         return document.model_dump(mode="json", by_alias=True)
+
+    @api.get("/card-prefixes")
+    async def get_card_prefixes() -> list[dict[str, Any]]:
+        service = loaded()
+        assert service.database is not None and service.kanban is not None
+        store = CardReferenceStore(service.database)
+        boards = sorted(service.kanban.list_boards(), key=lambda item: str(item["slug"]))
+        result = []
+        for board in boards:
+            slug = str(board["slug"])
+            try:
+                # Snapshotting materializes references for pre-existing host cards,
+                # so Settings reports and migrates the real card count immediately.
+                service.kanban.snapshot(slug)
+            except Exception as exc:  # one damaged board must not hide all settings
+                logger.warning("Could not materialize card references for %s: %s", slug, exc)
+            result.append(
+                {
+                    **store.configuration(slug),
+                    "boardName": str(board.get("name") or slug),
+                }
+            )
+        return result
+
+    @api.put("/card-prefixes/{board_slug}")
+    async def put_card_prefix(board_slug: str, body: CardPrefixPatch) -> dict[str, Any]:
+        service = loaded()
+        assert service.database is not None and service.kanban is not None
+        boards = {str(board["slug"]): board for board in service.kanban.list_boards()}
+        if board_slug not in boards:
+            raise HTTPException(status_code=404, detail="unknown kanban board")
+        store = CardReferenceStore(service.database)
+        try:
+            result = store.configure_prefix(board_slug, body.prefix)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return {
+            **result,
+            "boardName": str(boards[board_slug].get("name") or board_slug),
+        }
 
     @api.get("/routing-defaults")
     async def get_routing_defaults() -> dict[str, Any]:

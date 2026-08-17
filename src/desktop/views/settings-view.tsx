@@ -1,4 +1,5 @@
 import type { CrewApi } from '../api'
+import { CardPrefixEditor } from '../components/card-prefix-editor'
 import { LimitsEditor } from '../components/limits-editor'
 
 /** Workspace settings: one place for everything that isn't a bot or a channel. */
@@ -11,7 +12,8 @@ export function SettingsView({ api }: { api: CrewApi }) {
           Workspace-wide configuration. Bot identity, models, and skills live
           in Bot Management.
         </p>
-        <div className="mt-6">
+        <div className="mt-6 grid gap-8">
+          <CardPrefixEditor api={api} />
           <LimitsEditor api={api} />
         </div>
       </div>

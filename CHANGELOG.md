@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 — 2026-08-17
+
+Every kanban board now receives a generated card prefix automatically. A new
+Settings → Card prefixes panel lists every board, shows its generated default,
+and lets the user save an override or return to automatic naming. Changing a
+prefix atomically migrates existing card references while preserving the
+never-reuse sequence invariant; bot context, tool hooks, Channels APIs, and the
+board UI immediately use the new names.
+
 ## 0.4.0 — 2026-08-17
 
 Cards now have stable human-facing references per work area: `SD-#`, `TO-#`,

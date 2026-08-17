@@ -2,6 +2,7 @@ import type { PluginRest, PluginRestOptions } from '@hermes/plugin-sdk'
 
 import type {
   AvatarGenerateOptions,
+  CardPrefixConfiguration,
   ChannelSections,
   CrewChannel,
   CrewMember,
@@ -159,6 +160,14 @@ export class CrewApi {
 
   putChannelSections(body: ChannelSections): Promise<ChannelSections> {
     return this.mutate('/channel-sections', 'PUT', body)
+  }
+
+  getCardPrefixes(): Promise<CardPrefixConfiguration[]> {
+    return this.request('/card-prefixes')
+  }
+
+  updateCardPrefix(boardSlug: string, prefix: string | null): Promise<CardPrefixConfiguration> {
+    return this.mutate(`/card-prefixes/${encodeURIComponent(boardSlug)}`, 'PUT', { prefix })
   }
 
   getRoutingDefaults(): Promise<RoutingRulesConfig> {

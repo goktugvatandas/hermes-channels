@@ -6,7 +6,7 @@ A unit of tracked work on a channel's board.
 
 ## Card Reference
 
-A stable, human-facing name for a Card, formed from its work-area prefix and a monotonically increasing number, such as `SD-1` or `CR-12`. Card References are never reused and are the canonical way humans and bots refer to work in conversation.
+A stable, human-facing name for a Card, formed from its board prefix and a monotonically increasing number, such as `SD-1` or `CR-12`. Every board receives a generated prefix automatically; the user may override it in Channels Settings. Card References are never reused and are the canonical way humans and bots refer to work in conversation.
 
 ## Task ID
 
@@ -14,4 +14,4 @@ The opaque identity Hermes uses internally for a Card, such as `t_4921604a`. Tas
 
 ## Board Prefix
 
-The short work-area code used by every Card Reference on a board: `SD`, `TO`, `CR`, `KM`, `OS`, `HQ`, or `CD`.
+The short code used by every Card Reference on a board. Channels generates one automatically from the board slug; the user may override or reset it from Settings → Card prefixes.

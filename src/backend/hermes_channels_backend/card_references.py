@@ -1,4 +1,4 @@
-"""Stable human-facing card references over Hermes' opaque task ids."""
+"""Stable, configurable human card references over opaque Hermes task ids."""
 
 from __future__ import annotations
 
@@ -12,38 +12,179 @@ from typing import Any, Iterable
 
 from .db import CrewDatabase
 
-BOARD_PREFIXES = {
-    "channel-seatech": "SD",
-    "channel-the-others": "TO",
-    "channel-circle": "CR",
-    "channel-kronomyth": "KM",
-    "channel-oss": "OS",
-    "channel-hq": "HQ",
-    "channel-cultdrops": "CD",
-}
-
+PREFIX_OVERRIDES_SETTING = "kanban_prefix_overrides"
+_PREFIX = re.compile(r"^[A-Z][A-Z0-9]{0,7}$")
 _REFERENCE = re.compile(r"^[A-Z][A-Z0-9]{0,7}-[1-9][0-9]*$")
 
 
-def prefix_for_board(board_slug: str) -> str:
-    known = BOARD_PREFIXES.get(board_slug)
-    if known:
-        return known
-    if board_slug.startswith("channel-cultdrops-"):
-        return "CD"
+def generate_prefix(board_slug: str) -> str:
+    """Generate a compact default for any board without configuration."""
+
     name = board_slug.removeprefix("channel-")
     words = [word for word in re.split(r"[^a-zA-Z0-9]+", name) if word]
     if len(words) > 1:
         return "".join(word[0] for word in words[:3]).upper()
     compact = re.sub(r"[^a-zA-Z0-9]", "", name).upper()
-    return (compact[:2] or "KB")
+    return compact[:2] or "KB"
 
 
 class CardReferenceStore:
-    """Allocate and resolve immutable per-board human card references."""
+    """Generate, configure, allocate, migrate, and resolve card references."""
 
     def __init__(self, database: CrewDatabase):
         self.database = database
+
+    @staticmethod
+    def _overrides(connection: Any) -> dict[str, str]:
+        row = connection.execute(
+            "SELECT value_json FROM settings WHERE key = ?",
+            (PREFIX_OVERRIDES_SETTING,),
+        ).fetchone()
+        if row is None:
+            return {}
+        try:
+            value = json.loads(row[0])
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(board): str(prefix).upper()
+            for board, prefix in value.items()
+            if isinstance(board, str) and isinstance(prefix, str) and _PREFIX.fullmatch(prefix.upper())
+        }
+
+    @staticmethod
+    def _save_overrides(connection: Any, overrides: dict[str, str]) -> None:
+        connection.execute(
+            """INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(key) DO UPDATE SET
+                   value_json = excluded.value_json,
+                   updated_at = excluded.updated_at""",
+            (
+                PREFIX_OVERRIDES_SETTING,
+                json.dumps(overrides, sort_keys=True),
+                int(time.time() * 1000),
+            ),
+        )
+
+    def _effective_prefix(self, connection: Any, board_slug: str) -> str:
+        override = self._overrides(connection).get(board_slug)
+        if override:
+            return override
+        # Backward compatibility: a board that already has assigned references
+        # keeps that prefix until the user changes or resets it in Settings.
+        row = connection.execute(
+            """SELECT prefix FROM kanban_card_references
+               WHERE board_slug = ? ORDER BY created_at, sequence LIMIT 1""",
+            (board_slug,),
+        ).fetchone()
+        return str(row[0]) if row is not None else generate_prefix(board_slug)
+
+    def configuration(self, board_slug: str) -> dict[str, Any]:
+        generated = generate_prefix(board_slug)
+        with self.database.connect() as connection:
+            overrides = self._overrides(connection)
+            prefix = self._effective_prefix(connection, board_slug)
+            count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM kanban_card_references WHERE board_slug = ?",
+                    (board_slug,),
+                ).fetchone()[0]
+            )
+        return {
+            "boardSlug": board_slug,
+            "prefix": prefix,
+            "generatedPrefix": generated,
+            "customized": board_slug in overrides or prefix != generated,
+            "cardCount": count,
+        }
+
+    def configure_prefix(self, board_slug: str, prefix: str | None) -> dict[str, Any]:
+        """Set or reset a board prefix and atomically migrate assigned cards."""
+
+        generated = generate_prefix(board_slug)
+        target = generated if prefix is None else prefix.strip().upper()
+        if not _PREFIX.fullmatch(target):
+            raise ValueError("prefix must start with a letter and contain 1–8 letters or digits")
+
+        with self.database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            overrides = self._overrides(connection)
+            if prefix is None or target == generated:
+                overrides.pop(board_slug, None)
+            else:
+                overrides[board_slug] = target
+
+            rows = connection.execute(
+                """SELECT task_id, prefix, sequence FROM kanban_card_references
+                   WHERE board_slug = ? ORDER BY sequence, created_at, task_id""",
+                (board_slug,),
+            ).fetchall()
+            migrated = 0
+            current_prefixes = {str(row["prefix"]) for row in rows}
+            if rows and current_prefixes != {target}:
+                counter = connection.execute(
+                    "SELECT next_sequence FROM kanban_reference_counters WHERE prefix = ?",
+                    (target,),
+                ).fetchone()
+                if counter is None:
+                    next_sequence = int(
+                        connection.execute(
+                            """SELECT COALESCE(MAX(sequence), 0) + 1
+                               FROM kanban_card_references
+                               WHERE prefix = ? AND board_slug != ?""",
+                            (target, board_slug),
+                        ).fetchone()[0]
+                    )
+                else:
+                    next_sequence = int(counter[0])
+
+                assignments: list[tuple[str, int, str]] = []
+                for row in rows:
+                    sequence = next_sequence
+                    assignments.append((str(row["task_id"]), sequence, f"{target}-{sequence}"))
+                    next_sequence += 1
+
+                # Clear both unique namespaces before assigning target values:
+                # references are globally unique and sequences are unique per board.
+                for temporary_sequence, (task_id, _, _) in enumerate(assignments, start=1):
+                    connection.execute(
+                        """UPDATE kanban_card_references
+                           SET reference = ?, sequence = ?
+                           WHERE board_slug = ? AND task_id = ?""",
+                        (
+                            f"__migrating__{board_slug}__{task_id}",
+                            -temporary_sequence,
+                            board_slug,
+                            task_id,
+                        ),
+                    )
+                for task_id, sequence, reference in assignments:
+                    connection.execute(
+                        """UPDATE kanban_card_references
+                           SET prefix = ?, sequence = ?, reference = ?
+                           WHERE board_slug = ? AND task_id = ?""",
+                        (target, sequence, reference, board_slug, task_id),
+                    )
+                connection.execute(
+                    """INSERT INTO kanban_reference_counters (prefix, next_sequence)
+                       VALUES (?, ?)
+                       ON CONFLICT(prefix) DO UPDATE SET
+                           next_sequence = MAX(next_sequence, excluded.next_sequence)""",
+                    (target, next_sequence),
+                )
+                migrated = len(assignments)
+
+            self._save_overrides(connection, overrides)
+
+        return {
+            "boardSlug": board_slug,
+            "prefix": target,
+            "generatedPrefix": generated,
+            "customized": target != generated,
+            "migratedCards": migrated,
+        }
 
     def ensure_references(
         self,
@@ -54,10 +195,10 @@ class CardReferenceStore:
         task_ids = [str(task.id) for task in ordered]
         if not task_ids:
             return {}
-        prefix = prefix_for_board(board_slug)
         now = int(time.time() * 1000)
         with self.database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            prefix = self._effective_prefix(connection, board_slug)
             existing_rows = connection.execute(
                 """SELECT task_id, reference FROM kanban_card_references
                    WHERE board_slug = ?""",
@@ -93,7 +234,7 @@ class CardReferenceStore:
                 """INSERT INTO kanban_reference_counters
                    (prefix, next_sequence) VALUES (?, ?)
                    ON CONFLICT(prefix) DO UPDATE SET
-                       next_sequence = excluded.next_sequence""",
+                       next_sequence = MAX(next_sequence, excluded.next_sequence)""",
                 (prefix, next_sequence),
             )
         return {task_id: existing[task_id] for task_id in task_ids}
@@ -125,11 +266,13 @@ class CardReferenceStore:
 
 def _shared_database_path() -> Path:
     try:
-        from hermes_constants import get_process_hermes_home
+        from hermes_constants import get_default_hermes_root
 
-        home = Path(get_process_hermes_home())
+        home = Path(get_default_hermes_root())
     except Exception:
         home = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+        if home.parent.name == "profiles":
+            home = home.parent.parent
     return home / "channels" / "channels.db"
 
 
