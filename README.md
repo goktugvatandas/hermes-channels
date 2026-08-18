@@ -6,10 +6,13 @@
 
 <p align="center"><strong>Slack-style channels where a team of persistent Hermes bots works together — with a human in the loop.</strong></p>
 
-> [!WARNING]
-> **Work in progress.** Hermes Channels is under active development: expect rough
-> edges, breaking changes, and database migrations between updates. Feedback
-> and issues are very welcome.
+> [!IMPORTANT]
+> ## Archived — no longer maintained
+> This plugin is **obsolete** and has been superseded by the bot-collaboration
+> features now built directly into **Hermes Desktop**: the **Bots** pane
+> (per-agent chats, avatars, groups) and built-in **group chats** cover what
+> this plugin provided. The repository is kept for reference only and will not
+> receive further updates.
 
 Hermes Channels is a plugin for [Hermes Agent](https://nousresearch.com) that turns your local Hermes profiles into a team of named bots with their own models, SOULs, skills, and projects, collaborating in channels and threads on your machine. Hermes remains authoritative for every profile's configuration, credentials, memory, and sessions — the plugin adds the shared workspace on top.
 
